@@ -1,15 +1,23 @@
 {
   "buildCommand": "bash scripts/build-deploy.sh",
   "outputDirectory": "dist",
+  "trailingSlash": false,
+  "redirects": [
+    { "source": "/cyberpunk timing", "destination": "/cybertime", "permanent": true },
+    { "source": "/cyberpunk timing/:path*", "destination": "/cybertime", "permanent": true }
+  ],
+  "rewrites": [
+    { "source": "/cybertime", "destination": "/cybertime/index.html" }
+  ],
   "headers": [
     {
-      "source": "/(.*)\\.js",
+      "source": "/cybertime/(.*)\\.js",
       "headers": [
         { "key": "Content-Type", "value": "application/javascript; charset=utf-8" }
       ]
     },
     {
-      "source": "/music/(.*)\\.mp3",
+      "source": "/cybertime/music/(.*)\\.mp3",
       "headers": [
         { "key": "Content-Type", "value": "audio/mpeg" }
       ]

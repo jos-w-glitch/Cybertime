@@ -59,6 +59,7 @@ const LEADERBOARD_ICON_PATH = "assets/2.png";
 const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
+const STAGE_TIME_SECONDS = 30;
 
 const COLORS = {
   bg: [10, 10, 18],

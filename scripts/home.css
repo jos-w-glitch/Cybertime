@@ -1,13 +1,3 @@
-<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Joseph Weiss</title>
-  <meta name="description" content="joseph-weiss.com — פרויקטים ומשחקים">
-  <link rel="icon" type="image/png" href="cybertime/assets/icon-192.png">
-  <link rel="canonical" href="https://www.joseph-weiss.com/">
-  <style>
 @import url("https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap");
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -318,54 +308,3 @@ body {
   .avatar { width: 72px; height: 72px; font-size: 1.4rem; }
   .project-card { padding: 18px; }
 }
-  </style>
-</head>
-<body>
-  <div class="bg-shapes" aria-hidden="true">
-    <span class="shape shape-a"></span>
-    <span class="shape shape-b"></span>
-    <span class="shape shape-c"></span>
-  </div>
-
-  <main class="page">
-    <header class="hero">
-      <div class="avatar" aria-hidden="true">JW</div>
-      <p class="domain">joseph-weiss.com</p>
-      <h1>Joseph Weiss</h1>
-      <p class="tagline">יוצר משחקים ופרויקטים אינטראקטיביים</p>
-      <div class="hero-line"></div>
-    </header>
-
-    <section class="projects" aria-label="פרויקטים">
-      <div class="section-head">
-        <h2 class="section-title">מה שיצרתי</h2>
-        <span class="section-count">1 פרויקט</span>
-      </div>
-
-      <ul class="project-list">
-        <li>
-          <a class="project-card" href="cybertime/index.html">
-            <div class="card-glow" aria-hidden="true"></div>
-            <div class="project-thumb-wrap">
-              <img class="project-thumb" src="cybertime/assets/logo.png" alt="cybertime">
-            </div>
-            <div class="project-body">
-              <div class="project-tags">
-                <span class="tag">משחק</span>
-                <span class="tag">Web</span>
-              </div>
-              <span class="project-name">cybertime</span>
-              <span class="project-desc">משחק קצב וטיימינג בסגנון סייברפאנק — 12 שלבים, לוח תוצאות ומצב אינסופי</span>
-              <span class="project-cta">שחק עכשיו →</span>
-            </div>
-          </a>
-        </li>
-      </ul>
-    </section>
-
-    <footer class="footer">
-      <p>© 2026 Joseph Weiss</p>
-    </footer>
-  </main>
-</body>
-</html>

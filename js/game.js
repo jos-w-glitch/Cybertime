@@ -5,7 +5,11 @@ const GameLogic = {
     game.startTime = now;
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
-    if (!game.infinite) game.timeLeft = game.timeLimit;
+    if (!game.infinite) {
+      game.timeLimit = STAGE_TIME_SECONDS;
+      game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
+      game.timeLeft = STAGE_TIME_SECONDS;
+    }
     AudioEngine.resetMusicVolume();
     AudioEngine.startLevelMusic(game.level, () => this.onBeatSpawn(game, performance.now()));
   },
@@ -187,15 +191,16 @@ const GameLogic = {
       return null;
     }
 
-    const secondsPassed = (now - game.startTime) / 1000;
     if (game.infinite) {
       game.timeLeft = null;
     } else {
-      game.timeLeft = Math.max(0, Math.floor(game.timeLimit - secondsPassed));
-      if (game.timeLeft <= MUSIC_FADE_SECONDS) {
-        AudioEngine.setMusicFade(game.timeLeft, MUSIC_FADE_SECONDS);
+      const msLeft = game.stageEndAt - now;
+      const secondsLeft = msLeft / 1000;
+      game.timeLeft = Math.max(0, Math.ceil(secondsLeft));
+      if (secondsLeft <= MUSIC_FADE_SECONDS) {
+        AudioEngine.setMusicFade(secondsLeft, MUSIC_FADE_SECONDS);
       }
-      if (game.timeLeft <= 0) return "time";
+      if (msLeft <= 0) return "time";
     }
     if (game.currentTarget.isOffScreen) return "expired";
     if (!game.graceUntil || now > game.graceUntil) {
@@ -240,7 +245,7 @@ const GameLogic = {
 
     if (!game.started) {
       ctx.fillStyle = rgb(COLORS.gold);
-      const ready = game.infinite ? "INFINITE — READY" : `TIME: ${game.timeLimit}s`;
+      const ready = game.infinite ? "INFINITE — READY" : `TIME: ${STAGE_TIME_SECONDS}s`;
       ctx.fillText(ready, viewW() - ctx.measureText(ready).width - 20, 55);
       ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
