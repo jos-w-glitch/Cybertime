@@ -1,0 +1,8 @@
+.venv/
+node_modules/
+.DS_Store
+*.zip
+cybertime-no-assets/
+android/
+ios/
+.netlify/

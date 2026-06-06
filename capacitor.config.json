@@ -1,0 +1,15 @@
+{
+  "appId": "com.cybertime.game",
+  "appName": "cybertime",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "backgroundColor": "#0a0a12"
+  },
+  "ios": {
+    "backgroundColor": "#0a0a12",
+    "contentInset": "never"
+  }
+}

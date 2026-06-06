@@ -1,0 +1,9 @@
+.venv
+.vscode
+.DS_Store
+**/.DS_Store
+dino evolution
+cyberpunk timing
+game.py
+*.zip
+portfolio

@@ -1,0 +1,17 @@
+{
+  "name": "cybertime",
+  "private": true,
+  "scripts": {
+    "build": "bash scripts/build-deploy.sh",
+    "cap:init": "bash scripts/setup-capacitor.sh",
+    "cap:sync": "npx cap sync",
+    "cap:android": "npx cap open android",
+    "cap:ios": "npx cap open ios"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^6.2.0",
+    "@capacitor/cli": "^6.2.0",
+    "@capacitor/core": "^6.2.0",
+    "@capacitor/ios": "^6.2.0"
+  }
+}
