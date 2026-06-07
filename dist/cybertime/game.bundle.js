@@ -126,22 +126,22 @@ const TUTORIALS = {
       "Never left-click a live bomb!",
     ],
     mobileLines: [
-      "Red bombs look BLUE with a 2 below!",
-      "TAP the bomb TWICE to defuse.",
-      "One tap is not enough!",
+      "Red bombs start RED — turn BLUE after 1 tap.",
+      "TAP twice total to defuse red bombs.",
+      "Ball color = taps left (blue = 1 tap)!",
     ],
   },
   orange: {
     title: "NEW: ORANGE BOMBS",
     lines: [
-      "Orange bombs look BLUE on desktop!",
-      "RIGHT CLICK to defuse first.",
+      "Orange bombs start ORANGE on desktop!",
+      "RIGHT CLICK to defuse — turns BLUE.",
       "Then LEFT CLICK to confirm!",
     ],
     mobileLines: [
-      "Orange bombs look RED with a 3 below!",
-      "TAP the bomb THREE times.",
-      "Tap 1-2 defuse, tap 3 scores!",
+      "Orange: ORANGE → RED → BLUE as you tap.",
+      "TAP three times total to score.",
+      "Color shows taps left — blue = last tap!",
     ],
   },
   purple: {
@@ -240,8 +240,8 @@ const HOW_TO_LINES_MOBILE = [
   "HOW TO PLAY",
   "",
   "TAP — hit blue balls",
-  "RED bombs — blue ball, 2 below, tap twice",
-  "ORANGE bombs — red ball, 3 below, tap 3x",
+  "RED bombs — tap twice (red, then blue)",
+  "ORANGE bombs — tap 3x (orange → red → blue)",
   "PURPLE — tap BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
@@ -1705,15 +1705,6 @@ class Target {
       ctx.textAlign = "left";
     }
 
-    if (Input.touchMode && this.isBomb() && !this.defused) {
-      const needed = this.type === "ORANGE" ? 3 : 2;
-      ctx.font = gameFont(24);
-      ctx.fillStyle = rgb(COLORS.gold);
-      ctx.textAlign = "center";
-      ctx.fillText(String(needed), this.x, this.y + radius + 28);
-      ctx.textAlign = "left";
-    }
-
     if (this.type === "PURPLE" && !this.purpleTapped) {
       ctx.font = gameFont(18);
       ctx.fillStyle = rgb(COLORS.gold);
@@ -1724,14 +1715,29 @@ class Target {
     }
   }
 
+  _mobileTapsRemaining() {
+    if (this.type === "BOMB") return Math.max(1, 2 - this.mobileTapCount);
+    if (this.type === "ORANGE") return Math.max(1, 3 - this.mobileTapCount);
+    return 1;
+  }
+
+  _colorsFromRemaining(remaining) {
+    if (remaining >= 3) return { main: COLORS.orange, glow: COLORS.orangeGlow };
+    if (remaining === 2) return { main: COLORS.red, glow: COLORS.redGlow };
+    return { main: COLORS.blue, glow: COLORS.blueGlow };
+  }
+
   _colors() {
     if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
-    if (Input.touchMode) {
-      if (this.type === "BOMB") return { main: COLORS.blue, glow: COLORS.blueGlow };
-      if (this.type === "ORANGE") return { main: COLORS.red, glow: COLORS.redGlow };
-    }
-    if (this.type === "ORANGE" && !Input.touchMode) return { main: COLORS.blue, glow: COLORS.blueGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
+    if (Input.touchMode && this.isBomb()) {
+      return this._colorsFromRemaining(this._mobileTapsRemaining());
+    }
+    if (this.type === "ORANGE" && !Input.touchMode) {
+      if (!this.defused) return { main: COLORS.orange, glow: COLORS.orangeGlow };
+      return { main: COLORS.blue, glow: COLORS.blueGlow };
+    }
+    if (this.type === "ORANGE") return { main: COLORS.red, glow: COLORS.redGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }
