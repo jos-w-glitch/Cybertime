@@ -1,4 +1,4 @@
-const CACHE = "cybertime-shell-v2";
+const CACHE = "cybertime-shell-v3";
 const BASE = "/cybertime/";
 const SHELL = [
   `${BASE}`,
@@ -33,6 +33,23 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
   if (!url.pathname.startsWith(BASE)) return;
   if (url.pathname.includes("/music/")) return;
+
+  const isAppShell = url.pathname.endsWith("game.bundle.js") || url.pathname.endsWith("index.html");
+
+  if (isAppShell) {
+    event.respondWith(
+      fetch(event.request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(event.request, copy));
+          }
+          return response;
+        })
+        .catch(() => caches.match(event.request)),
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(event.request).then((cached) => {
