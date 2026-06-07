@@ -1715,29 +1715,30 @@ class Target {
     }
   }
 
-  _mobileTapsRemaining() {
-    if (this.type === "BOMB") return Math.max(1, 2 - this.mobileTapCount);
-    if (this.type === "ORANGE") return Math.max(1, 3 - this.mobileTapCount);
-    return 1;
-  }
-
-  _colorsFromRemaining(remaining) {
-    if (remaining >= 3) return { main: COLORS.orange, glow: COLORS.orangeGlow };
-    if (remaining === 2) return { main: COLORS.red, glow: COLORS.redGlow };
-    return { main: COLORS.blue, glow: COLORS.blueGlow };
+  _touchBombColors() {
+    if (this.type === "BOMB") {
+      if (this.mobileTapCount === 0) return { main: COLORS.red, glow: COLORS.redGlow };
+      return { main: COLORS.blue, glow: COLORS.blueGlow };
+    }
+    if (this.type === "ORANGE") {
+      if (this.mobileTapCount === 0) return { main: COLORS.orange, glow: COLORS.orangeGlow };
+      if (this.mobileTapCount === 1) return { main: COLORS.red, glow: COLORS.redGlow };
+      return { main: COLORS.blue, glow: COLORS.blueGlow };
+    }
+    return null;
   }
 
   _colors() {
     if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
-    if (Input.touchMode && this.isBomb()) {
-      return this._colorsFromRemaining(this._mobileTapsRemaining());
+    if (Input.touchMode) {
+      const touchColors = this._touchBombColors();
+      if (touchColors) return touchColors;
     }
     if (this.type === "ORANGE" && !Input.touchMode) {
       if (!this.defused) return { main: COLORS.orange, glow: COLORS.orangeGlow };
       return { main: COLORS.blue, glow: COLORS.blueGlow };
     }
-    if (this.type === "ORANGE") return { main: COLORS.red, glow: COLORS.redGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }
