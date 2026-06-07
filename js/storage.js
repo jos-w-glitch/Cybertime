@@ -12,7 +12,7 @@ const defaultSave = () => ({
   equippedSkin: "default",
   equippedBackground: "cyber",
   keys: { ball: 0, bomb: 2, ballKey: "KeyZ", bombKey: "KeyX" },
-  settings: { musicVolume: 0.55, sfxVolume: 0.7 },
+  settings: { musicVolume: 0.55, sfxVolume: 0.7, accessibility: false },
 });
 
 function normalizeSave(raw) {
@@ -31,6 +31,7 @@ function normalizeSave(raw) {
   if (!data.settings || typeof data.settings !== "object") data.settings = { ...base.settings };
   data.settings.musicVolume = Number.isFinite(data.settings.musicVolume) ? data.settings.musicVolume : base.settings.musicVolume;
   data.settings.sfxVolume = Number.isFinite(data.settings.sfxVolume) ? data.settings.sfxVolume : base.settings.sfxVolume;
+  data.settings.accessibility = !!data.settings.accessibility;
   if (!data.keys || typeof data.keys !== "object") data.keys = { ...base.keys };
   data.keys.ball = data.keys.ball ?? base.keys.ball;
   data.keys.bomb = data.keys.bomb ?? base.keys.bomb;

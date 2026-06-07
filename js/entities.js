@@ -68,7 +68,7 @@ class Target {
   constructor(level, isSlider = false) {
     this.type = this._pickType(level, isSlider);
 
-    this.radius = (22 + Math.floor(Math.random() * 10)) * (Input.touchMode ? 1.35 : 1);
+    this.radius = (22 + Math.floor(Math.random() * 10)) * targetRadiusScale();
     this.isActive = false;
     this.isSlider = isSlider;
     this.defused = false;
@@ -97,10 +97,11 @@ class Target {
       if (level.sliderRed && Math.random() < rates.sliderRed) return "BOMB";
       return "BALL";
     }
-    if (!level.allowRed && !level.allowOrange) return "BALL";
+    if (!level.allowRed && !level.allowOrange && !level.allowPurple) return "BALL";
     const roll = Math.random();
-    if (level.allowOrange && roll < rates.orange) return "ORANGE";
-    if (level.allowRed && roll < rates.orange + rates.red) return "BOMB";
+    if (level.allowPurple && roll < rates.purple) return "PURPLE";
+    if (level.allowOrange && roll < rates.purple + rates.orange) return "ORANGE";
+    if (level.allowRed && roll < rates.purple + rates.orange + rates.red) return "BOMB";
     return "BALL";
   }
 
@@ -145,9 +146,8 @@ class Target {
   }
 
   checkClick(pos) {
-    const hitPad = Input.touchMode ? 22 : 4;
     const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-    if (dist <= this.radius + hitPad) return "HIT";
+    if (dist <= this.radius + hitPadSize()) return "HIT";
     if (dist <= this.radius + SAFE_ZONE_BORDER) return "SAFE_ZONE";
     return "MISS";
   }
@@ -235,35 +235,57 @@ class Target {
       ctx.textAlign = "left";
     }
 
-    if (Input.touchMode && this.isBomb() && !this.defused && this.mobileTapCount > 0) {
+    if (Input.touchMode && this.isBomb() && !this.defused) {
       const needed = this.type === "ORANGE" ? 3 : 2;
-      ctx.font = gameFont(20);
-      ctx.fillStyle = rgb(COLORS.text);
+      ctx.font = gameFont(24);
+      ctx.fillStyle = rgb(COLORS.gold);
       ctx.textAlign = "center";
-      ctx.fillText(`${this.mobileTapCount}/${needed}`, this.x, this.y - radius - 14);
+      ctx.fillText(String(needed), this.x, this.y + radius + 28);
+      ctx.textAlign = "left";
+    }
+
+    if (this.type === "PURPLE" && Input.touchMode) {
+      ctx.font = gameFont(18);
+      ctx.fillStyle = rgb(COLORS.gold);
+      ctx.textAlign = "center";
+      ctx.fillText("BOTH!", this.x, this.y + radius + 28);
+      ctx.textAlign = "left";
+    }
+
+    if (this.type === "PURPLE" && !Input.touchMode) {
+      ctx.font = gameFont(18);
+      ctx.fillStyle = rgb(COLORS.gold);
+      ctx.textAlign = "center";
+      ctx.fillText("L+R", this.x, this.y + radius + 28);
       ctx.textAlign = "left";
     }
   }
 
   _colors() {
+    if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
+    if (Input.touchMode) {
+      if (this.type === "BOMB") return { main: COLORS.blue, glow: COLORS.blueGlow };
+      if (this.type === "ORANGE") return { main: COLORS.red, glow: COLORS.redGlow };
+    }
+    if (this.type === "ORANGE" && !Input.touchMode) return { main: COLORS.blue, glow: COLORS.blueGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
-    if (this.type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }
 
 function createStartTarget() {
+  const baseRadius = Input.touchMode ? 44 : 34;
   return {
     x: viewW() / 2,
     y: viewH() / 2,
-    radius: Input.touchMode ? 44 : 34,
+    radius: Math.round(baseRadius * accessibilityScale()),
     pulseAngle: 0,
     update() {
       this.pulseAngle += 0.1;
     },
     checkClick(pos) {
       const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-      if (dist <= this.radius + 4) return "HIT";
+      if (dist <= this.radius + hitPadSize()) return "HIT";
       return "MISS";
     },
     draw(ctx) {
@@ -313,5 +335,10 @@ function createGame(level, now) {
     beatCount: 0,
     lastRewards: null,
     graceUntil: 0,
+    purplePartner: null,
+    purpleTapMain: 0,
+    purpleTapPartner: 0,
+    purpleBallAt: 0,
+    purpleBombAt: 0,
   };
 }

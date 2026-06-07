@@ -15,12 +15,26 @@ function mobileUiScale() {
   return Input?.touchMode ? 1.45 : 1;
 }
 
+function accessibilityScale() {
+  return Input?.save?.settings?.accessibility ? 1.35 : 1;
+}
+
+function hitPadSize() {
+  let pad = Input?.touchMode ? 22 : 4;
+  if (Input?.save?.settings?.accessibility) pad += Input.touchMode ? 20 : 14;
+  return pad;
+}
+
+function targetRadiusScale() {
+  return (Input?.touchMode ? 1.35 : 1) * accessibilityScale();
+}
+
 function uiFont(size) {
-  return gameFont(Math.round(size * mobileUiScale()));
+  return gameFont(Math.round(size * mobileUiScale() * accessibilityScale()));
 }
 
 function btnHeight(size = 52) {
-  return Math.round(size * mobileUiScale());
+  return Math.round(size * mobileUiScale() * accessibilityScale());
 }
 
 function iconButtonSize() {
@@ -57,17 +71,19 @@ const LOGO_PATH = "assets/logo.png";
 const HOME_ICON_PATH = "assets/1.png";
 
 const INFINITE_MECHANIC_PRESETS = [
-  { name: "BLUE ONLY", red: false, orange: false, sliders: false, sliderRed: false },
-  { name: "RED BOMBS", red: true, orange: false, sliders: false, sliderRed: false },
-  { name: "ORANGE BOMBS", red: true, orange: true, sliders: false, sliderRed: false },
-  { name: "SLIDERS", red: false, orange: false, sliders: true, sliderRed: false },
-  { name: "RED SLIDERS", red: false, orange: false, sliders: true, sliderRed: true },
-  { name: "FULL MIX", red: true, orange: true, sliders: true, sliderRed: true },
+  { name: "BLUE ONLY", red: false, orange: false, purple: false, sliders: false, sliderRed: false },
+  { name: "RED BOMBS", red: true, orange: false, purple: false, sliders: false, sliderRed: false },
+  { name: "ORANGE BOMBS", red: true, orange: true, purple: false, sliders: false, sliderRed: false },
+  { name: "PURPLE DUAL", red: false, orange: false, purple: true, sliders: false, sliderRed: false },
+  { name: "SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: false },
+  { name: "RED SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: true },
+  { name: "FULL MIX", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
 ];
 const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
+const PURPLE_DUAL_WINDOW_MS = 350;
 
 const COLORS = {
   bg: [10, 10, 18],
@@ -83,6 +99,7 @@ const COLORS = {
   green: [50, 255, 100],
   gold: [255, 210, 60],
   purple: [180, 80, 255],
+  purpleGlow: [120, 40, 200],
 };
 
 const LEVELS = [
@@ -92,12 +109,12 @@ const LEVELS = [
   { id: 4, name: "PULSE DRIVE", bpm: 104, hitWindowMs: 2000, bombFuse: 3.8, duration: 30, sliders: false, allowRed: true, allowOrange: false, sliderRed: false, redChance: 0.38, orangeChance: 0, sliderChance: 0, sliderRedChance: 0, passScore: 22, clearXp: 110, musicId: "track4", tutorial: null, featureHint: "~38% red bombs — more pressure" },
   { id: 5, name: "ORANGE GLINT", bpm: 112, hitWindowMs: 1850, bombFuse: 3.5, duration: 30, sliders: false, allowRed: true, allowOrange: true, sliderRed: false, redChance: 0.12, orangeChance: 0.25, sliderChance: 0, sliderRedChance: 0, passScore: 26, clearXp: 125, musicId: "track5", tutorial: "orange", featureHint: "~25% orange — defuse then confirm" },
   { id: 6, name: "HYPER LOOP", bpm: 122, hitWindowMs: 1700, bombFuse: 3.2, duration: 30, sliders: false, allowRed: true, allowOrange: true, sliderRed: false, redChance: 0.15, orangeChance: 0.35, sliderChance: 0, sliderRedChance: 0, passScore: 32, clearXp: 140, musicId: "track6", tutorial: null, featureHint: "~35% orange — mixed bombs" },
-  { id: 7, name: "SLIDE INTRO", bpm: 132, hitWindowMs: 1500, bombFuse: 3, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: false, redChance: 0, orangeChance: 0, sliderChance: 0.4, sliderRedChance: 0, passScore: 38, clearXp: 165, musicId: "track7", tutorial: "sliders", featureHint: "~40% sliding blues" },
-  { id: 8, name: "CHAOS CORE", bpm: 142, hitWindowMs: 1350, bombFuse: 2.8, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: false, redChance: 0, orangeChance: 0, sliderChance: 0.55, sliderRedChance: 0, passScore: 44, clearXp: 185, musicId: "track8", tutorial: null, featureHint: "~55% sliding blues — faster slides" },
-  { id: 9, name: "RED SLIDE", bpm: 152, hitWindowMs: 1200, bombFuse: 2.6, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: true, redChance: 0, orangeChance: 0, sliderChance: 0.48, sliderRedChance: 0.3, passScore: 50, clearXp: 210, musicId: "track9", tutorial: "redSliders", featureHint: "~30% red sliders — defuse on the move" },
-  { id: 10, name: "SLIDE BOMB", bpm: 160, hitWindowMs: 1100, bombFuse: 2.4, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: true, redChance: 0, orangeChance: 0, sliderChance: 0.52, sliderRedChance: 0.42, passScore: 55, clearXp: 230, musicId: "track10", tutorial: null, featureHint: "~42% red sliders — harder mix" },
-  { id: 11, name: "MIX MASTER", bpm: 162, hitWindowMs: 1000, bombFuse: 2.3, duration: 30, sliders: true, allowRed: true, allowOrange: true, sliderRed: true, redChance: 0.12, orangeChance: 0.1, sliderChance: 0.45, sliderRedChance: 0.25, passScore: 60, clearXp: 250, musicId: "track11", tutorial: null, featureHint: "All mechanics — moderate mix" },
-  { id: 12, name: "FINAL SYNC", bpm: 168, hitWindowMs: 900, bombFuse: 2.2, duration: 30, sliders: true, allowRed: true, allowOrange: true, sliderRed: true, redChance: 0.14, orangeChance: 0.12, sliderChance: 0.55, sliderRedChance: 0.44, passScore: 68, clearXp: 280, musicId: "track12", tutorial: null, featureHint: "Everything combined — final test" },
+  { id: 7, name: "DUAL SYNC", bpm: 128, hitWindowMs: 1550, bombFuse: 3, duration: 30, sliders: false, allowRed: false, allowOrange: false, allowPurple: true, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0.35, sliderChance: 0, sliderRedChance: 0, passScore: 36, clearXp: 155, musicId: "track7", tutorial: "purple", featureHint: "~35% purple pairs — tap both at once" },
+  { id: 8, name: "TWIN PULSE", bpm: 136, hitWindowMs: 1420, bombFuse: 2.9, duration: 30, sliders: false, allowRed: false, allowOrange: false, allowPurple: true, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0.5, sliderChance: 0, sliderRedChance: 0, passScore: 42, clearXp: 175, musicId: "track8", tutorial: null, featureHint: "~50% purple pairs — faster timing" },
+  { id: 9, name: "SLIDE INTRO", bpm: 142, hitWindowMs: 1350, bombFuse: 2.8, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.4, sliderRedChance: 0, passScore: 44, clearXp: 185, musicId: "track9", tutorial: "sliders", featureHint: "~40% sliding blues" },
+  { id: 10, name: "CHAOS CORE", bpm: 152, hitWindowMs: 1200, bombFuse: 2.6, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.55, sliderRedChance: 0, passScore: 50, clearXp: 210, musicId: "track10", tutorial: null, featureHint: "~55% sliding blues — faster slides" },
+  { id: 11, name: "RED SLIDE", bpm: 160, hitWindowMs: 1100, bombFuse: 2.4, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: true, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.48, sliderRedChance: 0.3, passScore: 55, clearXp: 230, musicId: "track11", tutorial: "redSliders", featureHint: "~30% red sliders — defuse on the move" },
+  { id: 12, name: "FINAL SYNC", bpm: 168, hitWindowMs: 900, bombFuse: 2.2, duration: 30, sliders: true, allowRed: true, allowOrange: true, allowPurple: true, sliderRed: true, redChance: 0.12, orangeChance: 0.1, purpleChance: 0.08, sliderChance: 0.55, sliderRedChance: 0.44, passScore: 68, clearXp: 280, musicId: "track12", tutorial: null, featureHint: "Everything combined — final test" },
 ];
 
 const TUTORIALS = {
@@ -109,7 +126,7 @@ const TUTORIALS = {
       "Never left-click a live bomb!",
     ],
     mobileLines: [
-      "Red targets are BOMBS!",
+      "Red bombs look BLUE with a 2 below!",
       "TAP the bomb TWICE to defuse.",
       "One tap is not enough!",
     ],
@@ -117,14 +134,27 @@ const TUTORIALS = {
   orange: {
     title: "NEW: ORANGE BOMBS",
     lines: [
-      "Orange bombs show up often here!",
+      "Orange bombs look BLUE on desktop!",
       "RIGHT CLICK to defuse first.",
       "Then LEFT CLICK to confirm!",
     ],
     mobileLines: [
-      "Orange bombs show up often here!",
+      "Orange bombs look RED with a 3 below!",
       "TAP the bomb THREE times.",
       "Tap 1-2 defuse, tap 3 scores!",
+    ],
+  },
+  purple: {
+    title: "NEW: PURPLE DUAL",
+    lines: [
+      "Purple targets need BOTH mouse buttons!",
+      "LEFT + RIGHT CLICK at the same time.",
+      "Hit both buttons on one purple ball!",
+    ],
+    mobileLines: [
+      "Two PURPLE balls appear together!",
+      "TAP BOTH at the same time.",
+      "Both must be hit within a moment!",
     ],
   },
   sliders: {
@@ -187,6 +217,7 @@ const XP_PER_SCORE = 2;
 
 const ORANGE_BOMB_CHANCE = 0.03;
 const RED_BOMB_CHANCE = 0.10;
+const PURPLE_BOMB_CHANCE = 0.08;
 const SLIDER_SPAWN_CHANCE = 0.35;
 
 const HOW_TO_LINES = [
@@ -194,10 +225,11 @@ const HOW_TO_LINES = [
   "",
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
-  "ORANGE bombs (rare): defuse, then click!",
+  "ORANGE bombs look blue — defuse, then click!",
+  "PURPLE — left + right click together!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
-  "Sliders appear from stage 7",
+  "Purple pairs from stage 7, sliders from 9",
   "Build COMBO for bigger score & XP",
   "Beat the GOAL score before time runs out (30s)",
   "INFINITE mode — pick track + mechanics, survive!",
@@ -208,8 +240,9 @@ const HOW_TO_LINES_MOBILE = [
   "HOW TO PLAY",
   "",
   "TAP — hit blue balls",
-  "RED bombs — tap twice on target",
-  "ORANGE bombs — tap three times",
+  "RED bombs — blue ball, 2 below, tap twice",
+  "ORANGE bombs — red ball, 3 below, tap 3x",
+  "PURPLE — tap BOTH purple balls together!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",
@@ -224,13 +257,14 @@ function getHowToLines() {
 const INFINITE_MECHANIC_DEFAULTS = {
   redChance: RED_BOMB_CHANCE,
   orangeChance: ORANGE_BOMB_CHANCE,
+  purpleChance: PURPLE_BOMB_CHANCE,
   sliderChance: SLIDER_SPAWN_CHANCE,
   sliderRedChance: 0.35,
 };
 
 function buildInfiniteModeKey(trackId, mechanics) {
   const m = mechanics;
-  return `${trackId}-r${m.red ? 1 : 0}o${m.orange ? 1 : 0}s${m.sliders ? 1 : 0}rs${m.sliderRed ? 1 : 0}`;
+  return `${trackId}-r${m.red ? 1 : 0}o${m.orange ? 1 : 0}p${m.purple ? 1 : 0}s${m.sliders ? 1 : 0}rs${m.sliderRed ? 1 : 0}`;
 }
 
 function applyInfiniteMechanicPreset(setup, index) {
@@ -238,6 +272,7 @@ function applyInfiniteMechanicPreset(setup, index) {
   setup.mechanicIndex = index;
   setup.red = preset.red;
   setup.orange = preset.orange;
+  setup.purple = preset.purple;
   setup.sliders = preset.sliders;
   setup.sliderRed = preset.sliderRed;
 }
@@ -258,9 +293,10 @@ function infiniteMechanicName(setup) {
 function createInfiniteLevel(sourceLevel, mechanics = {}) {
   const red = mechanics.red !== false;
   const orange = mechanics.orange !== false;
+  const purple = !!mechanics.purple;
   const sliders = !!mechanics.sliders;
   const sliderRed = !!mechanics.sliderRed && sliders;
-  const modeKey = buildInfiniteModeKey(sourceLevel.id, { red, orange, sliders, sliderRed });
+  const modeKey = buildInfiniteModeKey(sourceLevel.id, { red, orange, purple, sliders, sliderRed });
 
   return {
     ...sourceLevel,
@@ -273,10 +309,12 @@ function createInfiniteLevel(sourceLevel, mechanics = {}) {
     clearXp: 0,
     allowRed: red,
     allowOrange: orange,
+    allowPurple: purple,
     sliders,
     sliderRed,
     redChance: red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
     orangeChance: orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
+    purpleChance: purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
     sliderChance: sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
     sliderRedChance: sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
     tutorial: null,
@@ -291,6 +329,7 @@ function shouldSpawnSlider(level) {
 
 function levelTargetRates(level) {
   return {
+    purple: level.purpleChance ?? PURPLE_BOMB_CHANCE,
     red: level.redChance ?? RED_BOMB_CHANCE,
     orange: level.orangeChance ?? ORANGE_BOMB_CHANCE,
     slider: level.sliderChance ?? SLIDER_SPAWN_CHANCE,
@@ -619,7 +658,7 @@ const defaultSave = () => ({
   equippedSkin: "default",
   equippedBackground: "cyber",
   keys: { ball: 0, bomb: 2, ballKey: "KeyZ", bombKey: "KeyX" },
-  settings: { musicVolume: 0.55, sfxVolume: 0.7 },
+  settings: { musicVolume: 0.55, sfxVolume: 0.7, accessibility: false },
 });
 
 function normalizeSave(raw) {
@@ -638,6 +677,7 @@ function normalizeSave(raw) {
   if (!data.settings || typeof data.settings !== "object") data.settings = { ...base.settings };
   data.settings.musicVolume = Number.isFinite(data.settings.musicVolume) ? data.settings.musicVolume : base.settings.musicVolume;
   data.settings.sfxVolume = Number.isFinite(data.settings.sfxVolume) ? data.settings.sfxVolume : base.settings.sfxVolume;
+  data.settings.accessibility = !!data.settings.accessibility;
   if (!data.keys || typeof data.keys !== "object") data.keys = { ...base.keys };
   data.keys.ball = data.keys.ball ?? base.keys.ball;
   data.keys.bomb = data.keys.bomb ?? base.keys.bomb;
@@ -1492,7 +1532,7 @@ class Target {
   constructor(level, isSlider = false) {
     this.type = this._pickType(level, isSlider);
 
-    this.radius = (22 + Math.floor(Math.random() * 10)) * (Input.touchMode ? 1.35 : 1);
+    this.radius = (22 + Math.floor(Math.random() * 10)) * targetRadiusScale();
     this.isActive = false;
     this.isSlider = isSlider;
     this.defused = false;
@@ -1521,10 +1561,11 @@ class Target {
       if (level.sliderRed && Math.random() < rates.sliderRed) return "BOMB";
       return "BALL";
     }
-    if (!level.allowRed && !level.allowOrange) return "BALL";
+    if (!level.allowRed && !level.allowOrange && !level.allowPurple) return "BALL";
     const roll = Math.random();
-    if (level.allowOrange && roll < rates.orange) return "ORANGE";
-    if (level.allowRed && roll < rates.orange + rates.red) return "BOMB";
+    if (level.allowPurple && roll < rates.purple) return "PURPLE";
+    if (level.allowOrange && roll < rates.purple + rates.orange) return "ORANGE";
+    if (level.allowRed && roll < rates.purple + rates.orange + rates.red) return "BOMB";
     return "BALL";
   }
 
@@ -1569,9 +1610,8 @@ class Target {
   }
 
   checkClick(pos) {
-    const hitPad = Input.touchMode ? 22 : 4;
     const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-    if (dist <= this.radius + hitPad) return "HIT";
+    if (dist <= this.radius + hitPadSize()) return "HIT";
     if (dist <= this.radius + SAFE_ZONE_BORDER) return "SAFE_ZONE";
     return "MISS";
   }
@@ -1659,35 +1699,57 @@ class Target {
       ctx.textAlign = "left";
     }
 
-    if (Input.touchMode && this.isBomb() && !this.defused && this.mobileTapCount > 0) {
+    if (Input.touchMode && this.isBomb() && !this.defused) {
       const needed = this.type === "ORANGE" ? 3 : 2;
-      ctx.font = gameFont(20);
-      ctx.fillStyle = rgb(COLORS.text);
+      ctx.font = gameFont(24);
+      ctx.fillStyle = rgb(COLORS.gold);
       ctx.textAlign = "center";
-      ctx.fillText(`${this.mobileTapCount}/${needed}`, this.x, this.y - radius - 14);
+      ctx.fillText(String(needed), this.x, this.y + radius + 28);
+      ctx.textAlign = "left";
+    }
+
+    if (this.type === "PURPLE" && Input.touchMode) {
+      ctx.font = gameFont(18);
+      ctx.fillStyle = rgb(COLORS.gold);
+      ctx.textAlign = "center";
+      ctx.fillText("BOTH!", this.x, this.y + radius + 28);
+      ctx.textAlign = "left";
+    }
+
+    if (this.type === "PURPLE" && !Input.touchMode) {
+      ctx.font = gameFont(18);
+      ctx.fillStyle = rgb(COLORS.gold);
+      ctx.textAlign = "center";
+      ctx.fillText("L+R", this.x, this.y + radius + 28);
       ctx.textAlign = "left";
     }
   }
 
   _colors() {
+    if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
+    if (Input.touchMode) {
+      if (this.type === "BOMB") return { main: COLORS.blue, glow: COLORS.blueGlow };
+      if (this.type === "ORANGE") return { main: COLORS.red, glow: COLORS.redGlow };
+    }
+    if (this.type === "ORANGE" && !Input.touchMode) return { main: COLORS.blue, glow: COLORS.blueGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
-    if (this.type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }
 
 function createStartTarget() {
+  const baseRadius = Input.touchMode ? 44 : 34;
   return {
     x: viewW() / 2,
     y: viewH() / 2,
-    radius: Input.touchMode ? 44 : 34,
+    radius: Math.round(baseRadius * accessibilityScale()),
     pulseAngle: 0,
     update() {
       this.pulseAngle += 0.1;
     },
     checkClick(pos) {
       const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-      if (dist <= this.radius + 4) return "HIT";
+      if (dist <= this.radius + hitPadSize()) return "HIT";
       return "MISS";
     },
     draw(ctx) {
@@ -1737,6 +1799,11 @@ function createGame(level, now) {
     beatCount: 0,
     lastRewards: null,
     graceUntil: 0,
+    purplePartner: null,
+    purpleTapMain: 0,
+    purpleTapPartner: 0,
+    purpleBallAt: 0,
+    purpleBombAt: 0,
   };
 }
 const AudioEngine = {
@@ -1965,6 +2032,7 @@ const GameLogic = {
     game.startTime = now;
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
     if (!game.infinite) {
       game.timeLimit = STAGE_TIME_SECONDS;
       game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
@@ -1996,6 +2064,12 @@ const GameLogic = {
     const action = Input.resolveButton(button);
     if (!action) return;
 
+    if (game.currentTarget.type === "PURPLE") {
+      if (Input.touchMode) this._handleMobilePurple(game, pos, now);
+      else this._handleDesktopPurple(game, button, pos, now);
+      return;
+    }
+
     const result = game.currentTarget.checkClick(pos);
     if (result === "MISS") {
       this._registerMiss(game, pos);
@@ -2018,6 +2092,102 @@ const GameLogic = {
     }
 
     this._resolveHit(game, action, now);
+  },
+
+  _handleMobilePurple(game, pos, now) {
+    const main = game.currentTarget;
+    const partner = game.purplePartner;
+    const mainHit = main.checkClick(pos);
+    const partnerHit = partner ? partner.checkClick(pos) : null;
+
+    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") {
+      this._resetPurpleState(game);
+      this._registerMiss(game, pos);
+      return;
+    }
+    if (mainHit !== "HIT" && partnerHit !== "HIT") return;
+
+    if (mainHit === "HIT") game.purpleTapMain = now;
+    if (partnerHit === "HIT") game.purpleTapPartner = now;
+
+    if (!game.purpleTapMain || !game.purpleTapPartner) {
+      AudioEngine.playDefuse();
+      return;
+    }
+    if (Math.abs(game.purpleTapMain - game.purpleTapPartner) > PURPLE_DUAL_WINDOW_MS) {
+      this._resetPurpleState(game);
+      this._wrongHit(game, main);
+      return;
+    }
+
+    this._resetPurpleState(game);
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    const points = game.combo + 1;
+    game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
+    AudioEngine.playHit();
+    this._advanceTarget(game, main, COLORS.purple, now);
+  },
+
+  _handleDesktopPurple(game, button, pos, now) {
+    const target = game.currentTarget;
+    const hit = target.checkClick(pos);
+    if (hit === "MISS") {
+      this._resetPurpleState(game);
+      this._registerMiss(game, pos);
+      return;
+    }
+    if (hit !== "HIT") return;
+
+    const action = Input.resolveButton(button);
+    if (action === "ball") game.purpleBallAt = now;
+    if (action === "bomb") game.purpleBombAt = now;
+
+    if (!game.purpleBallAt || !game.purpleBombAt) {
+      AudioEngine.playDefuse();
+      return;
+    }
+    if (Math.abs(game.purpleBallAt - game.purpleBombAt) > PURPLE_DUAL_WINDOW_MS) {
+      this._resetPurpleState(game);
+      this._wrongHit(game, target);
+      return;
+    }
+
+    this._resetPurpleState(game);
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    const points = game.combo + 1;
+    game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
+    AudioEngine.playHit();
+    this._advanceTarget(game, target, COLORS.purple, now);
+  },
+
+  _resetPurpleState(game) {
+    game.purplePartner = null;
+    game.purpleTapMain = 0;
+    game.purpleTapPartner = 0;
+    game.purpleBallAt = 0;
+    game.purpleBombAt = 0;
+  },
+
+  _syncPurplePair(game, now) {
+    this._resetPurpleState(game);
+    const target = game.currentTarget;
+    if (target.type !== "PURPLE" || !Input.touchMode) return;
+
+    const partner = new Target(game.level, false);
+    partner.type = "PURPLE";
+    let attempts = 0;
+    while (attempts < 24) {
+      partner.x = 100 + Math.random() * (viewW() - 200);
+      partner.y = 140 + Math.random() * (viewH() - 280);
+      if (Math.hypot(partner.x - target.x, partner.y - target.y) >= 140) break;
+      attempts += 1;
+    }
+    partner.expiresAt = target.expiresAt;
+    partner.activate(now);
+    partner.expiresAt = target.expiresAt;
+    game.purplePartner = partner;
   },
 
   _handleMobileBomb(game, action, now) {
@@ -2126,15 +2296,18 @@ const GameLogic = {
   _wrongHit(game, target) {
     if (target.mobileTapCount !== undefined) target.mobileTapCount = 0;
     if (target.defused) target.defused = false;
+    this._resetPurpleState(game);
     game.combo = 0;
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
 
   _advanceTarget(game, target, color, now) {
+    this._resetPurpleState(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
     game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
   },
 
@@ -2242,11 +2415,13 @@ const GameLogic = {
   drawMobileControls(ctx, level) {
     if (!Input.touchMode) return;
     Input.setMobileZones(null, null);
-    const needsMultiTap = level.allowRed || level.allowOrange || level.sliderRed;
+    const needsMultiTap = level.allowRed || level.allowOrange || level.allowPurple || level.sliderRed;
     if (!needsMultiTap) return;
     ctx.font = gameFont(16);
     ctx.fillStyle = rgb(COLORS.text);
-    const hint = "RED: 2 taps  |  ORANGE: 3 taps";
+    const hint = level.allowPurple
+      ? "RED: 2 taps  |  ORANGE: 3 taps  |  PURPLE: tap BOTH"
+      : "RED: 2 taps  |  ORANGE: 3 taps";
     ctx.fillText(hint, (viewW() - ctx.measureText(hint).width) / 2, viewH() - 40);
   },
 };
@@ -2271,6 +2446,24 @@ const Screens = {
     const rect = buttonRect(App.ctx, label, x, y, w, h);
     this.buttons[id] = rect;
     return rect;
+  },
+
+  menuLayout() {
+    const pad = this.screenPad();
+    const count = 6;
+    const headerBottom = Input.touchMode ? 288 : 310;
+    const footer = Input.touchMode ? 44 : 28;
+    const gap = Input.touchMode ? 10 : 8;
+    const avail = viewH() - headerBottom - footer;
+    const btnH = Math.max(btnHeight(Input.touchMode ? 56 : 52), Math.floor((avail - gap * (count - 1)) / count));
+    return {
+      pad,
+      btnH,
+      btnW: viewW() - pad * 2,
+      top: headerBottom,
+      gap,
+      titleSize: Input.touchMode ? 88 : 100,
+    };
   },
 
   menuBtnY(index) {
@@ -2386,39 +2579,48 @@ const Screens = {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars);
+    const layout = this.menuLayout();
 
-    App.ctx.font = gameFont(72);
+    App.ctx.font = gameFont(layout.titleSize);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText(GAME_NAME, (viewW() - App.ctx.measureText(GAME_NAME).width) / 2, 120);
+    App.ctx.fillText(GAME_NAME, (viewW() - App.ctx.measureText(GAME_NAME).width) / 2, Input.touchMode ? 100 : 110);
 
-    App.ctx.font = gameFont(22);
+    App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
     App.ctx.fillStyle = rgb(COLORS.gold);
     const userLine = Auth.isLoggedIn()
       ? `PLAYER: ${Auth.displayName}`
       : "GUEST — login in Settings for leaderboard";
-    App.ctx.fillText(userLine, (viewW() - App.ctx.measureText(userLine).width) / 2, 165);
+    App.ctx.fillText(userLine, (viewW() - App.ctx.measureText(userLine).width) / 2, Input.touchMode ? 138 : 155);
 
-    drawXpBar(App.ctx, save, 80, 200, 280);
-    drawCoins(App.ctx, save, viewW() - 220, 215);
+    drawXpBar(App.ctx, save, layout.pad, Input.touchMode ? 168 : 178, Math.min(320, viewW() - layout.pad * 2 - 140));
+    drawCoins(App.ctx, save, viewW() - layout.pad - 120, Input.touchMode ? 182 : 192);
 
-    App.ctx.font = gameFont(40);
+    App.ctx.font = uiFont(Input.touchMode ? 22 : 28);
     App.ctx.fillStyle = rgb(COLORS.text);
     const best = save.highScores[1] || 0;
     const hs = `HIGH SCORE: ${best}`;
-    App.ctx.fillText(hs, (viewW() - App.ctx.measureText(hs).width) / 2, 270);
+    App.ctx.fillText(hs, (viewW() - App.ctx.measureText(hs).width) / 2, Input.touchMode ? 228 : 248);
 
-    drawNeonButton(App.ctx, this.btn("start", "START", null, this.menuBtnY(0)), "START", pointInRect(mousePos, this.buttons.start));
-    drawNeonButton(App.ctx, this.btn("levels", "LEVELS", null, this.menuBtnY(1)), "LEVELS", pointInRect(mousePos, this.buttons.levels));
-    drawNeonButton(App.ctx, this.btn("infinite", "INFINITE", null, this.menuBtnY(2)), "INFINITE", pointInRect(mousePos, this.buttons.infinite));
-    drawNeonButton(App.ctx, this.btn("shop", "SHOP", null, this.menuBtnY(3)), "SHOP", pointInRect(mousePos, this.buttons.shop));
-    drawNeonButton(App.ctx, this.btn("settings", "SETTINGS", null, this.menuBtnY(4)), "SETTINGS", pointInRect(mousePos, this.buttons.settings));
-    drawNeonButton(App.ctx, this.btn("howto", "HOW TO PLAY", null, this.menuBtnY(5)), "HOW TO PLAY", pointInRect(mousePos, this.buttons.howto), true);
+    const labels = [
+      ["start", "START"],
+      ["levels", "LEVELS"],
+      ["infinite", "INFINITE"],
+      ["shop", "SHOP"],
+      ["settings", "SETTINGS"],
+      ["howto", "HOW TO PLAY"],
+    ];
+    let y = layout.top;
+    labels.forEach(([id, label], index) => {
+      const rect = this.btn(id, label, layout.pad, y, layout.btnW, layout.btnH);
+      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect));
+      y += layout.btnH + layout.gap;
+    });
 
     if (Input.touchMode) {
-      App.ctx.font = gameFont(16);
+      App.ctx.font = uiFont(14);
       App.ctx.fillStyle = rgb(COLORS.green);
       const mobileHint = "MOBILE — tap targets directly";
-      App.ctx.fillText(mobileHint, (viewW() - App.ctx.measureText(mobileHint).width) / 2, viewH() - 40);
+      App.ctx.fillText(mobileHint, (viewW() - App.ctx.measureText(mobileHint).width) / 2, viewH() - 24);
     }
     this.finishButtons();
   },
@@ -2724,7 +2926,9 @@ const Screens = {
     }
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
+    const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
     const settingsY = Input.touchMode ? 360 : 490;
+    drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - (Input.touchMode ? 0 : 70), Input.touchMode ? 420 : 580, btnHeight(44)), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
     drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnHeight(44)), accountLabel, pointInRect(mousePos, this.buttons.account), true);
     drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnHeight(44)), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
 
@@ -2770,6 +2974,7 @@ const Screens = {
       return;
     }
     game.nextTarget.draw(App.ctx, now);
+    if (game.purplePartner?.isActive) game.purplePartner.draw(App.ctx, now);
     game.currentTarget.draw(App.ctx, now);
     game.flippedTargets.forEach((pt) => pt.draw(App.ctx));
     game.floatingTexts.forEach((ft) => ft.draw(App.ctx));
@@ -2901,6 +3106,11 @@ const Screens = {
         App.stars = createStars();
         MobileShell.syncRotatePrompt();
         if (App.canvas) App.canvas.style.cursor = Input.touchMode ? "default" : "none";
+        return true;
+      }
+      if (this._hit("toggleAccessibility", pos)) {
+        save.settings.accessibility = !save.settings.accessibility;
+        writeSave(save);
         return true;
       }
       if (this._hit("account", pos)) {

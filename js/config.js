@@ -15,12 +15,26 @@ function mobileUiScale() {
   return Input?.touchMode ? 1.45 : 1;
 }
 
+function accessibilityScale() {
+  return Input?.save?.settings?.accessibility ? 1.35 : 1;
+}
+
+function hitPadSize() {
+  let pad = Input?.touchMode ? 22 : 4;
+  if (Input?.save?.settings?.accessibility) pad += Input.touchMode ? 20 : 14;
+  return pad;
+}
+
+function targetRadiusScale() {
+  return (Input?.touchMode ? 1.35 : 1) * accessibilityScale();
+}
+
 function uiFont(size) {
-  return gameFont(Math.round(size * mobileUiScale()));
+  return gameFont(Math.round(size * mobileUiScale() * accessibilityScale()));
 }
 
 function btnHeight(size = 52) {
-  return Math.round(size * mobileUiScale());
+  return Math.round(size * mobileUiScale() * accessibilityScale());
 }
 
 function iconButtonSize() {
@@ -57,17 +71,19 @@ const LOGO_PATH = "assets/logo.png";
 const HOME_ICON_PATH = "assets/1.png";
 
 const INFINITE_MECHANIC_PRESETS = [
-  { name: "BLUE ONLY", red: false, orange: false, sliders: false, sliderRed: false },
-  { name: "RED BOMBS", red: true, orange: false, sliders: false, sliderRed: false },
-  { name: "ORANGE BOMBS", red: true, orange: true, sliders: false, sliderRed: false },
-  { name: "SLIDERS", red: false, orange: false, sliders: true, sliderRed: false },
-  { name: "RED SLIDERS", red: false, orange: false, sliders: true, sliderRed: true },
-  { name: "FULL MIX", red: true, orange: true, sliders: true, sliderRed: true },
+  { name: "BLUE ONLY", red: false, orange: false, purple: false, sliders: false, sliderRed: false },
+  { name: "RED BOMBS", red: true, orange: false, purple: false, sliders: false, sliderRed: false },
+  { name: "ORANGE BOMBS", red: true, orange: true, purple: false, sliders: false, sliderRed: false },
+  { name: "PURPLE DUAL", red: false, orange: false, purple: true, sliders: false, sliderRed: false },
+  { name: "SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: false },
+  { name: "RED SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: true },
+  { name: "FULL MIX", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
 ];
 const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
+const PURPLE_DUAL_WINDOW_MS = 350;
 
 const COLORS = {
   bg: [10, 10, 18],
@@ -83,6 +99,7 @@ const COLORS = {
   green: [50, 255, 100],
   gold: [255, 210, 60],
   purple: [180, 80, 255],
+  purpleGlow: [120, 40, 200],
 };
 
 const LEVELS = [
@@ -92,12 +109,12 @@ const LEVELS = [
   { id: 4, name: "PULSE DRIVE", bpm: 104, hitWindowMs: 2000, bombFuse: 3.8, duration: 30, sliders: false, allowRed: true, allowOrange: false, sliderRed: false, redChance: 0.38, orangeChance: 0, sliderChance: 0, sliderRedChance: 0, passScore: 22, clearXp: 110, musicId: "track4", tutorial: null, featureHint: "~38% red bombs — more pressure" },
   { id: 5, name: "ORANGE GLINT", bpm: 112, hitWindowMs: 1850, bombFuse: 3.5, duration: 30, sliders: false, allowRed: true, allowOrange: true, sliderRed: false, redChance: 0.12, orangeChance: 0.25, sliderChance: 0, sliderRedChance: 0, passScore: 26, clearXp: 125, musicId: "track5", tutorial: "orange", featureHint: "~25% orange — defuse then confirm" },
   { id: 6, name: "HYPER LOOP", bpm: 122, hitWindowMs: 1700, bombFuse: 3.2, duration: 30, sliders: false, allowRed: true, allowOrange: true, sliderRed: false, redChance: 0.15, orangeChance: 0.35, sliderChance: 0, sliderRedChance: 0, passScore: 32, clearXp: 140, musicId: "track6", tutorial: null, featureHint: "~35% orange — mixed bombs" },
-  { id: 7, name: "SLIDE INTRO", bpm: 132, hitWindowMs: 1500, bombFuse: 3, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: false, redChance: 0, orangeChance: 0, sliderChance: 0.4, sliderRedChance: 0, passScore: 38, clearXp: 165, musicId: "track7", tutorial: "sliders", featureHint: "~40% sliding blues" },
-  { id: 8, name: "CHAOS CORE", bpm: 142, hitWindowMs: 1350, bombFuse: 2.8, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: false, redChance: 0, orangeChance: 0, sliderChance: 0.55, sliderRedChance: 0, passScore: 44, clearXp: 185, musicId: "track8", tutorial: null, featureHint: "~55% sliding blues — faster slides" },
-  { id: 9, name: "RED SLIDE", bpm: 152, hitWindowMs: 1200, bombFuse: 2.6, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: true, redChance: 0, orangeChance: 0, sliderChance: 0.48, sliderRedChance: 0.3, passScore: 50, clearXp: 210, musicId: "track9", tutorial: "redSliders", featureHint: "~30% red sliders — defuse on the move" },
-  { id: 10, name: "SLIDE BOMB", bpm: 160, hitWindowMs: 1100, bombFuse: 2.4, duration: 30, sliders: true, allowRed: false, allowOrange: false, sliderRed: true, redChance: 0, orangeChance: 0, sliderChance: 0.52, sliderRedChance: 0.42, passScore: 55, clearXp: 230, musicId: "track10", tutorial: null, featureHint: "~42% red sliders — harder mix" },
-  { id: 11, name: "MIX MASTER", bpm: 162, hitWindowMs: 1000, bombFuse: 2.3, duration: 30, sliders: true, allowRed: true, allowOrange: true, sliderRed: true, redChance: 0.12, orangeChance: 0.1, sliderChance: 0.45, sliderRedChance: 0.25, passScore: 60, clearXp: 250, musicId: "track11", tutorial: null, featureHint: "All mechanics — moderate mix" },
-  { id: 12, name: "FINAL SYNC", bpm: 168, hitWindowMs: 900, bombFuse: 2.2, duration: 30, sliders: true, allowRed: true, allowOrange: true, sliderRed: true, redChance: 0.14, orangeChance: 0.12, sliderChance: 0.55, sliderRedChance: 0.44, passScore: 68, clearXp: 280, musicId: "track12", tutorial: null, featureHint: "Everything combined — final test" },
+  { id: 7, name: "DUAL SYNC", bpm: 128, hitWindowMs: 1550, bombFuse: 3, duration: 30, sliders: false, allowRed: false, allowOrange: false, allowPurple: true, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0.35, sliderChance: 0, sliderRedChance: 0, passScore: 36, clearXp: 155, musicId: "track7", tutorial: "purple", featureHint: "~35% purple pairs — tap both at once" },
+  { id: 8, name: "TWIN PULSE", bpm: 136, hitWindowMs: 1420, bombFuse: 2.9, duration: 30, sliders: false, allowRed: false, allowOrange: false, allowPurple: true, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0.5, sliderChance: 0, sliderRedChance: 0, passScore: 42, clearXp: 175, musicId: "track8", tutorial: null, featureHint: "~50% purple pairs — faster timing" },
+  { id: 9, name: "SLIDE INTRO", bpm: 142, hitWindowMs: 1350, bombFuse: 2.8, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.4, sliderRedChance: 0, passScore: 44, clearXp: 185, musicId: "track9", tutorial: "sliders", featureHint: "~40% sliding blues" },
+  { id: 10, name: "CHAOS CORE", bpm: 152, hitWindowMs: 1200, bombFuse: 2.6, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: false, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.55, sliderRedChance: 0, passScore: 50, clearXp: 210, musicId: "track10", tutorial: null, featureHint: "~55% sliding blues — faster slides" },
+  { id: 11, name: "RED SLIDE", bpm: 160, hitWindowMs: 1100, bombFuse: 2.4, duration: 30, sliders: true, allowRed: false, allowOrange: false, allowPurple: false, sliderRed: true, redChance: 0, orangeChance: 0, purpleChance: 0, sliderChance: 0.48, sliderRedChance: 0.3, passScore: 55, clearXp: 230, musicId: "track11", tutorial: "redSliders", featureHint: "~30% red sliders — defuse on the move" },
+  { id: 12, name: "FINAL SYNC", bpm: 168, hitWindowMs: 900, bombFuse: 2.2, duration: 30, sliders: true, allowRed: true, allowOrange: true, allowPurple: true, sliderRed: true, redChance: 0.12, orangeChance: 0.1, purpleChance: 0.08, sliderChance: 0.55, sliderRedChance: 0.44, passScore: 68, clearXp: 280, musicId: "track12", tutorial: null, featureHint: "Everything combined — final test" },
 ];
 
 const TUTORIALS = {
@@ -109,7 +126,7 @@ const TUTORIALS = {
       "Never left-click a live bomb!",
     ],
     mobileLines: [
-      "Red targets are BOMBS!",
+      "Red bombs look BLUE with a 2 below!",
       "TAP the bomb TWICE to defuse.",
       "One tap is not enough!",
     ],
@@ -117,14 +134,27 @@ const TUTORIALS = {
   orange: {
     title: "NEW: ORANGE BOMBS",
     lines: [
-      "Orange bombs show up often here!",
+      "Orange bombs look BLUE on desktop!",
       "RIGHT CLICK to defuse first.",
       "Then LEFT CLICK to confirm!",
     ],
     mobileLines: [
-      "Orange bombs show up often here!",
+      "Orange bombs look RED with a 3 below!",
       "TAP the bomb THREE times.",
       "Tap 1-2 defuse, tap 3 scores!",
+    ],
+  },
+  purple: {
+    title: "NEW: PURPLE DUAL",
+    lines: [
+      "Purple targets need BOTH mouse buttons!",
+      "LEFT + RIGHT CLICK at the same time.",
+      "Hit both buttons on one purple ball!",
+    ],
+    mobileLines: [
+      "Two PURPLE balls appear together!",
+      "TAP BOTH at the same time.",
+      "Both must be hit within a moment!",
     ],
   },
   sliders: {
@@ -187,6 +217,7 @@ const XP_PER_SCORE = 2;
 
 const ORANGE_BOMB_CHANCE = 0.03;
 const RED_BOMB_CHANCE = 0.10;
+const PURPLE_BOMB_CHANCE = 0.08;
 const SLIDER_SPAWN_CHANCE = 0.35;
 
 const HOW_TO_LINES = [
@@ -194,10 +225,11 @@ const HOW_TO_LINES = [
   "",
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
-  "ORANGE bombs (rare): defuse, then click!",
+  "ORANGE bombs look blue — defuse, then click!",
+  "PURPLE — left + right click together!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
-  "Sliders appear from stage 7",
+  "Purple pairs from stage 7, sliders from 9",
   "Build COMBO for bigger score & XP",
   "Beat the GOAL score before time runs out (30s)",
   "INFINITE mode — pick track + mechanics, survive!",
@@ -208,8 +240,9 @@ const HOW_TO_LINES_MOBILE = [
   "HOW TO PLAY",
   "",
   "TAP — hit blue balls",
-  "RED bombs — tap twice on target",
-  "ORANGE bombs — tap three times",
+  "RED bombs — blue ball, 2 below, tap twice",
+  "ORANGE bombs — red ball, 3 below, tap 3x",
+  "PURPLE — tap BOTH purple balls together!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",
@@ -224,13 +257,14 @@ function getHowToLines() {
 const INFINITE_MECHANIC_DEFAULTS = {
   redChance: RED_BOMB_CHANCE,
   orangeChance: ORANGE_BOMB_CHANCE,
+  purpleChance: PURPLE_BOMB_CHANCE,
   sliderChance: SLIDER_SPAWN_CHANCE,
   sliderRedChance: 0.35,
 };
 
 function buildInfiniteModeKey(trackId, mechanics) {
   const m = mechanics;
-  return `${trackId}-r${m.red ? 1 : 0}o${m.orange ? 1 : 0}s${m.sliders ? 1 : 0}rs${m.sliderRed ? 1 : 0}`;
+  return `${trackId}-r${m.red ? 1 : 0}o${m.orange ? 1 : 0}p${m.purple ? 1 : 0}s${m.sliders ? 1 : 0}rs${m.sliderRed ? 1 : 0}`;
 }
 
 function applyInfiniteMechanicPreset(setup, index) {
@@ -238,6 +272,7 @@ function applyInfiniteMechanicPreset(setup, index) {
   setup.mechanicIndex = index;
   setup.red = preset.red;
   setup.orange = preset.orange;
+  setup.purple = preset.purple;
   setup.sliders = preset.sliders;
   setup.sliderRed = preset.sliderRed;
 }
@@ -258,9 +293,10 @@ function infiniteMechanicName(setup) {
 function createInfiniteLevel(sourceLevel, mechanics = {}) {
   const red = mechanics.red !== false;
   const orange = mechanics.orange !== false;
+  const purple = !!mechanics.purple;
   const sliders = !!mechanics.sliders;
   const sliderRed = !!mechanics.sliderRed && sliders;
-  const modeKey = buildInfiniteModeKey(sourceLevel.id, { red, orange, sliders, sliderRed });
+  const modeKey = buildInfiniteModeKey(sourceLevel.id, { red, orange, purple, sliders, sliderRed });
 
   return {
     ...sourceLevel,
@@ -273,10 +309,12 @@ function createInfiniteLevel(sourceLevel, mechanics = {}) {
     clearXp: 0,
     allowRed: red,
     allowOrange: orange,
+    allowPurple: purple,
     sliders,
     sliderRed,
     redChance: red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
     orangeChance: orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
+    purpleChance: purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
     sliderChance: sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
     sliderRedChance: sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
     tutorial: null,
@@ -291,6 +329,7 @@ function shouldSpawnSlider(level) {
 
 function levelTargetRates(level) {
   return {
+    purple: level.purpleChance ?? PURPLE_BOMB_CHANCE,
     red: level.redChance ?? RED_BOMB_CHANCE,
     orange: level.orangeChance ?? ORANGE_BOMB_CHANCE,
     slider: level.sliderChance ?? SLIDER_SPAWN_CHANCE,

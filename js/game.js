@@ -5,6 +5,7 @@ const GameLogic = {
     game.startTime = now;
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
     if (!game.infinite) {
       game.timeLimit = STAGE_TIME_SECONDS;
       game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
@@ -36,6 +37,12 @@ const GameLogic = {
     const action = Input.resolveButton(button);
     if (!action) return;
 
+    if (game.currentTarget.type === "PURPLE") {
+      if (Input.touchMode) this._handleMobilePurple(game, pos, now);
+      else this._handleDesktopPurple(game, button, pos, now);
+      return;
+    }
+
     const result = game.currentTarget.checkClick(pos);
     if (result === "MISS") {
       this._registerMiss(game, pos);
@@ -58,6 +65,102 @@ const GameLogic = {
     }
 
     this._resolveHit(game, action, now);
+  },
+
+  _handleMobilePurple(game, pos, now) {
+    const main = game.currentTarget;
+    const partner = game.purplePartner;
+    const mainHit = main.checkClick(pos);
+    const partnerHit = partner ? partner.checkClick(pos) : null;
+
+    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") {
+      this._resetPurpleState(game);
+      this._registerMiss(game, pos);
+      return;
+    }
+    if (mainHit !== "HIT" && partnerHit !== "HIT") return;
+
+    if (mainHit === "HIT") game.purpleTapMain = now;
+    if (partnerHit === "HIT") game.purpleTapPartner = now;
+
+    if (!game.purpleTapMain || !game.purpleTapPartner) {
+      AudioEngine.playDefuse();
+      return;
+    }
+    if (Math.abs(game.purpleTapMain - game.purpleTapPartner) > PURPLE_DUAL_WINDOW_MS) {
+      this._resetPurpleState(game);
+      this._wrongHit(game, main);
+      return;
+    }
+
+    this._resetPurpleState(game);
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    const points = game.combo + 1;
+    game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
+    AudioEngine.playHit();
+    this._advanceTarget(game, main, COLORS.purple, now);
+  },
+
+  _handleDesktopPurple(game, button, pos, now) {
+    const target = game.currentTarget;
+    const hit = target.checkClick(pos);
+    if (hit === "MISS") {
+      this._resetPurpleState(game);
+      this._registerMiss(game, pos);
+      return;
+    }
+    if (hit !== "HIT") return;
+
+    const action = Input.resolveButton(button);
+    if (action === "ball") game.purpleBallAt = now;
+    if (action === "bomb") game.purpleBombAt = now;
+
+    if (!game.purpleBallAt || !game.purpleBombAt) {
+      AudioEngine.playDefuse();
+      return;
+    }
+    if (Math.abs(game.purpleBallAt - game.purpleBombAt) > PURPLE_DUAL_WINDOW_MS) {
+      this._resetPurpleState(game);
+      this._wrongHit(game, target);
+      return;
+    }
+
+    this._resetPurpleState(game);
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    const points = game.combo + 1;
+    game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
+    AudioEngine.playHit();
+    this._advanceTarget(game, target, COLORS.purple, now);
+  },
+
+  _resetPurpleState(game) {
+    game.purplePartner = null;
+    game.purpleTapMain = 0;
+    game.purpleTapPartner = 0;
+    game.purpleBallAt = 0;
+    game.purpleBombAt = 0;
+  },
+
+  _syncPurplePair(game, now) {
+    this._resetPurpleState(game);
+    const target = game.currentTarget;
+    if (target.type !== "PURPLE" || !Input.touchMode) return;
+
+    const partner = new Target(game.level, false);
+    partner.type = "PURPLE";
+    let attempts = 0;
+    while (attempts < 24) {
+      partner.x = 100 + Math.random() * (viewW() - 200);
+      partner.y = 140 + Math.random() * (viewH() - 280);
+      if (Math.hypot(partner.x - target.x, partner.y - target.y) >= 140) break;
+      attempts += 1;
+    }
+    partner.expiresAt = target.expiresAt;
+    partner.activate(now);
+    partner.expiresAt = target.expiresAt;
+    game.purplePartner = partner;
   },
 
   _handleMobileBomb(game, action, now) {
@@ -166,15 +269,18 @@ const GameLogic = {
   _wrongHit(game, target) {
     if (target.mobileTapCount !== undefined) target.mobileTapCount = 0;
     if (target.defused) target.defused = false;
+    this._resetPurpleState(game);
     game.combo = 0;
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
 
   _advanceTarget(game, target, color, now) {
+    this._resetPurpleState(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
     game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
   },
 
@@ -282,11 +388,13 @@ const GameLogic = {
   drawMobileControls(ctx, level) {
     if (!Input.touchMode) return;
     Input.setMobileZones(null, null);
-    const needsMultiTap = level.allowRed || level.allowOrange || level.sliderRed;
+    const needsMultiTap = level.allowRed || level.allowOrange || level.allowPurple || level.sliderRed;
     if (!needsMultiTap) return;
     ctx.font = gameFont(16);
     ctx.fillStyle = rgb(COLORS.text);
-    const hint = "RED: 2 taps  |  ORANGE: 3 taps";
+    const hint = level.allowPurple
+      ? "RED: 2 taps  |  ORANGE: 3 taps  |  PURPLE: tap BOTH"
+      : "RED: 2 taps  |  ORANGE: 3 taps";
     ctx.fillText(hint, (viewW() - ctx.measureText(hint).width) / 2, viewH() - 40);
   },
 };
