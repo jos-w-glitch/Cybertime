@@ -1654,7 +1654,15 @@ class Target {
       radius += Math.floor((3 + 5 * urgency) * Math.sin(this.pulseAngle));
     }
 
-    if ((this.type === "ORANGE" && this.defused) || (this.type === "PURPLE" && this.purpleTapped)) {
+    if (this.type === "ORANGE" && this.defused) {
+      ctx.strokeStyle = rgb(COLORS.green);
+      ctx.lineWidth = 4;
+      ctx.beginPath();
+      ctx.arc(this.x, this.y, radius + 8, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    if (this.type === "PURPLE" && this.purpleTapped) {
       ctx.strokeStyle = rgb(COLORS.green);
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -1702,6 +1710,15 @@ class Target {
       ctx.fillStyle = rgb(COLORS.green);
       ctx.textAlign = "center";
       ctx.fillText(Input.touchMode ? `${this.mobileTapCount}/3` : "TAP!", this.x, this.y - radius - 14);
+      ctx.textAlign = "left";
+    }
+
+    if (Input.touchMode && this.isBomb() && !this.defused && this.mobileTapCount > 0) {
+      const needed = this.type === "ORANGE" ? 3 : 2;
+      ctx.font = gameFont(20);
+      ctx.fillStyle = rgb(COLORS.text);
+      ctx.textAlign = "center";
+      ctx.fillText(`${this.mobileTapCount}/${needed}`, this.x, this.y - radius - 14);
       ctx.textAlign = "left";
     }
 
