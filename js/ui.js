@@ -302,7 +302,7 @@ const Screens = {
     drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
     drawNeonButton(
       App.ctx,
-      this.btn("back", "BACK", playX, playH() - (Input.touchMode ? 120 : 70), playW, btnHeight(52)),
+      this.btn("back", "BACK", playX, viewH() - (Input.touchMode ? 120 : 70), playW, btnHeight(52)),
       "BACK",
       pointInRect(mousePos, this.buttons.back),
     );
