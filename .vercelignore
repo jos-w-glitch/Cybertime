@@ -1,0 +1,12 @@
+.venv/
+node_modules/
+.DS_Store
+*.zip
+cybertime-no-assets/
+cyberpunk timing/
+dino evolution/
+android/
+ios/
+.netlify/
+game.py
+pygame.code-workspace

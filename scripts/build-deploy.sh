@@ -33,7 +33,6 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 
-cp "$SCRIPT_DIR/deploy-index.html" "$GAME/index.html"
 cp "$ROOT/assets/logo.png" "$GAME/assets/"
 cp "$ROOT/assets/1.png" "$GAME/assets/"
 cp "$ROOT/assets/fonts/"*.ttf "$GAME/assets/fonts/"
@@ -50,6 +49,9 @@ cp "$ROOT/music/"*.mp3 "$GAME/music/"
 
 BUILD_ID="$(date -u +"%Y-%m-%d %H:%M:%S UTC")"
 echo "cybertime $BUILD_ID" > "$GAME/build.txt"
+
+cp "$SCRIPT_DIR/deploy-index.html" "$GAME/index.html"
+sed -i '' "s|<!--BUILD_ID-->|$BUILD_ID|g" "$GAME/index.html" 2>/dev/null || sed -i "s|<!--BUILD_ID-->|$BUILD_ID|g" "$GAME/index.html"
 
 (cd "$DIST" && zip -r -q "$ROOT/cybertime-vercel.zip" .)
 

@@ -4,12 +4,37 @@
   "installCommand": "echo skip",
   "framework": null,
   "trailingSlash": true,
+  "build": {
+    "env": {
+      "NODE_OPTIONS": "--max-old-space-size=6144"
+    }
+  },
   "redirects": [
     { "source": "/cyberpunk timing", "destination": "/cybertime/", "permanent": true },
     { "source": "/cyberpunk timing/:path*", "destination": "/cybertime/", "permanent": true },
     { "source": "/cybertime/index.html", "destination": "/cybertime/", "permanent": true }
   ],
   "headers": [
+    {
+      "source": "/cybertime/game.bundle.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/cybertime/sw.js",
+      "headers": [
+        { "key": "Content-Type", "value": "application/javascript; charset=utf-8" },
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/cybertime/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=0, must-revalidate" }
+      ]
+    },
     {
       "source": "/cybertime/(.*)\\.js",
       "headers": [
