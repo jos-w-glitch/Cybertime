@@ -8,7 +8,6 @@ const SHELL = [
   "./assets/icon-192.png",
   "./assets/icon-512.png",
   "./assets/1.png",
-  "./assets/2.png",
   "./assets/fonts/Cyberjunkies.ttf",
 ];
 

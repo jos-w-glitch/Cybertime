@@ -79,11 +79,9 @@ function applyViewport(canvas) {
 
 const UiIcons = {
   home: null,
-  leaderboard: null,
 
   load() {
     this.home = this._loadImage(HOME_ICON_PATH);
-    this.leaderboard = this._loadImage(LEADERBOARD_ICON_PATH);
   },
 
   _loadImage(src) {
@@ -294,10 +292,6 @@ function drawLeaderboardPanel(ctx, save, levelId, x, y, maxEntries = 5) {
   entries.slice(0, maxEntries).forEach((entry, i) => {
     ctx.fillText(`${i + 1}. ${entry.name} — ${entry.score}`, x, y + 52 + i * 22);
   });
-}
-
-function drawTrophyButton(ctx, rect, hovered) {
-  drawIconButton(ctx, rect, UiIcons.leaderboard, hovered);
 }
 
 function homeButtonRect() {

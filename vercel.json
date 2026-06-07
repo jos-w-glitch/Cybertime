@@ -1,13 +1,14 @@
 {
   "buildCommand": "bash scripts/build-deploy.sh",
   "outputDirectory": "dist",
-  "trailingSlash": false,
+  "trailingSlash": true,
   "redirects": [
-    { "source": "/cyberpunk timing", "destination": "/cybertime", "permanent": true },
-    { "source": "/cyberpunk timing/:path*", "destination": "/cybertime", "permanent": true }
+    { "source": "/cyberpunk timing", "destination": "/cybertime/", "permanent": true },
+    { "source": "/cyberpunk timing/:path*", "destination": "/cybertime/", "permanent": true },
+    { "source": "/cybertime/index.html", "destination": "/cybertime/", "permanent": true }
   ],
   "rewrites": [
-    { "source": "/cybertime", "destination": "/cybertime/index.html" }
+    { "source": "/cybertime/", "destination": "/cybertime/index.html" }
   ],
   "headers": [
     {

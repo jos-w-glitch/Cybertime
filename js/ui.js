@@ -9,7 +9,7 @@ const Screens = {
   listMaxScroll: 0,
   draggingSlider: false,
   scrollDrag: null,
-  infiniteSetup: { trackId: 1, red: true, orange: true, sliders: false, sliderRed: false },
+  infiniteSetup: { trackId: 1, mechanicIndex: 2, red: true, orange: true, sliders: false, sliderRed: false },
 
   resetButtons() {
     this.buttons = {};
@@ -81,16 +81,31 @@ const Screens = {
   },
 
   defaultInfiniteSetup() {
-    return { trackId: 1, red: true, orange: true, sliders: false, sliderRed: false };
+    const setup = { trackId: 1, mechanicIndex: 2 };
+    applyInfiniteMechanicPreset(setup, setup.mechanicIndex);
+    return setup;
   },
 
-  infiniteMechanicsSummary(setup) {
-    const parts = ["Blue"];
-    if (setup.red) parts.push("Red");
-    if (setup.orange) parts.push("Orange");
-    if (setup.sliders) parts.push("Slide");
-    if (setup.sliderRed && setup.sliders) parts.push("Red slide");
-    return parts.join(" · ");
+  drawInfiniteCycleBlock(label, valueText, btnId, x, y, w, mousePos) {
+    const btnH = btnHeight(Input.touchMode ? 52 : 44);
+    const labelSize = Input.touchMode ? 20 : 22;
+    const valueSize = Input.touchMode ? 24 : 28;
+    const labelY = y;
+    const valueY = y + (Input.touchMode ? 34 : 38);
+    const btnY = y + (Input.touchMode ? 68 : 72);
+
+    App.ctx.font = uiFont(labelSize);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText(label, x, labelY);
+
+    App.ctx.font = uiFont(valueSize);
+    App.ctx.fillStyle = rgb(COLORS.text);
+    const valueW = App.ctx.measureText(valueText).width;
+    App.ctx.fillText(valueText, x + (w - valueW) / 2, valueY);
+
+    const rect = this.btn(btnId, "NEXT", x, btnY, w, btnH);
+    drawNeonButton(App.ctx, rect, "NEXT", pointInRect(mousePos, rect), true);
+    return btnY + btnH + (Input.touchMode ? 28 : 32);
   },
 
   screenPad() {
@@ -198,12 +213,6 @@ const Screens = {
 
       if (unlocked) {
         drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
-        const trophySize = iconButtonSize();
-        drawTrophyButton(
-          App.ctx,
-          this.btn(`trophy-${level.id}`, "", viewW() - play.w - 36 - trophySize, y - 10, trophySize, trophySize),
-          pointInRect(mousePos, this.buttons[`trophy-${level.id}`]),
-        );
       } else {
         const prev = getLevelById(level.id - 1);
         App.ctx.fillStyle = rgb(COLORS.gray);
@@ -253,131 +262,50 @@ const Screens = {
     const modeKey = buildInfiniteModeKey(setup.trackId, setup);
     const best = save.infiniteHighScores?.[modeKey] || 0;
     const pad = this.screenPad();
-    const toggles = [
-      { id: "infRed", label: "RED", on: setup.red },
-      { id: "infOrange", label: "ORANGE", on: setup.orange },
-      { id: "infSliders", label: "SLIDERS", on: setup.sliders },
-      { id: "infRedSliders", label: "RED SLIDE", on: setup.sliderRed, disabled: !setup.sliders },
-    ];
+    const blockW = Input.touchMode ? viewW() - pad * 2 : 420;
+    const blockX = Input.touchMode ? pad : 80;
 
-    if (Input.touchMode) {
-      App.ctx.font = uiFont(40);
-      App.ctx.fillStyle = rgb(COLORS.blue);
-      App.ctx.fillText("INFINITE", pad, 72);
-      App.ctx.font = uiFont(18);
-      App.ctx.fillStyle = rgb(COLORS.text);
-      App.ctx.fillText("Track + mechanics", pad, 102);
-
-      App.ctx.font = uiFont(20);
-      App.ctx.fillStyle = rgb(COLORS.gold);
-      App.ctx.fillText("TRACK", pad, 138);
-
-      const navSize = btnHeight(56);
-      const trackY = 158;
-      const prev = this.btn("infPrev", "◀", pad, trackY, navSize, navSize);
-      const next = this.btn("infNext", "▶", viewW() - pad - navSize, trackY, navSize, navSize);
-      drawNeonButton(App.ctx, prev, "◀", pointInRect(mousePos, prev), true);
-      drawNeonButton(App.ctx, next, "▶", pointInRect(mousePos, next), true);
-
-      const trackCenterX = viewW() / 2;
-      App.ctx.font = uiFont(26);
-      App.ctx.fillStyle = rgb(COLORS.text);
-      const trackTitle = `${level.id}. ${level.name}`;
-      App.ctx.fillText(trackTitle, trackCenterX - App.ctx.measureText(trackTitle).width / 2, trackY + 36);
-      App.ctx.font = uiFont(16);
-      App.ctx.fillStyle = rgb(COLORS.gray);
-      const trackSub = `BPM ${level.bpm}`;
-      App.ctx.fillText(trackSub, trackCenterX - App.ctx.measureText(trackSub).width / 2, trackY + 62);
-
-      const toggleW = (viewW() - pad * 2 - 14) / 2;
-      const toggleH = btnHeight(52);
-      const toggleY = 280;
-      App.ctx.font = uiFont(20);
-      App.ctx.fillStyle = rgb(COLORS.gold);
-      App.ctx.fillText("MECHANICS", pad, toggleY - 20);
-
-      toggles.forEach((toggle, i) => {
-        const col = i % 2;
-        const row = Math.floor(i / 2);
-        const x = pad + col * (toggleW + 14);
-        const y = toggleY + row * (toggleH + 14);
-        const rect = this.btn(toggle.id, toggle.label, x, y, toggleW, toggleH);
-        drawNeonButton(App.ctx, rect, toggle.label, pointInRect(mousePos, rect) && !toggle.disabled, toggle.on && !toggle.disabled);
-        if (toggle.disabled) {
-          App.ctx.fillStyle = "rgba(10,10,18,0.55)";
-          App.ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-        }
-      });
-
-      const summaryY = toggleY + 2 * (toggleH + 14) + 36;
-      App.ctx.font = uiFont(18);
-      App.ctx.fillStyle = rgb(COLORS.text);
-      App.ctx.fillText(this.infiniteMechanicsSummary(setup), pad, summaryY);
-      App.ctx.fillStyle = rgb(COLORS.green);
-      App.ctx.fillText(`BEST: ${best}`, pad, summaryY + 32);
-
-      const playW = viewW() - pad * 2;
-      const play = this.btn("infPlay", "PLAY", pad, viewH() - 200, playW, btnHeight(60));
-      drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
-      drawNeonButton(App.ctx, this.btn("back", "BACK", pad, viewH() - 120, playW, btnHeight(52)), "BACK", pointInRect(mousePos, this.buttons.back));
-      this.finishButtons();
-      return;
-    }
-
-    const toggleW = 130;
-    const toggleH = btnHeight(44);
-    const toggleY = 340;
-    const toggleGap = 12;
-
-    App.ctx.font = gameFont(48);
+    App.ctx.font = uiFont(Input.touchMode ? 40 : 48);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("INFINITE MODE", 80, 80);
-    App.ctx.font = gameFont(20);
+    App.ctx.fillText("INFINITE MODE", blockX, Input.touchMode ? 72 : 80);
+    App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
     App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText("Pick a track and which mechanics spawn", 80, 115);
+    App.ctx.fillText("Tap NEXT to cycle track and mechanics", blockX, Input.touchMode ? 102 : 115);
 
-    App.ctx.font = gameFont(22);
-    App.ctx.fillStyle = rgb(COLORS.gold);
-    App.ctx.fillText("TRACK", 80, 165);
+    let y = Input.touchMode ? 138 : 165;
+    y = this.drawInfiniteCycleBlock(
+      "TRACK",
+      `${level.id}. ${level.name}`,
+      "infCycleTrack",
+      blockX,
+      y,
+      blockW,
+      mousePos,
+    );
+    y = this.drawInfiniteCycleBlock(
+      "MECHANICS",
+      infiniteMechanicName(setup),
+      "infCycleMechanics",
+      blockX,
+      y,
+      blockW,
+      mousePos,
+    );
 
-    const prev = this.btn("infPrev", "◀", 80, 185, 56, btnHeight(48));
-    const next = this.btn("infNext", "▶", viewW() - 136, 185, 56, btnHeight(48));
-    drawNeonButton(App.ctx, prev, "◀", pointInRect(mousePos, prev), true);
-    drawNeonButton(App.ctx, next, "▶", pointInRect(mousePos, next), true);
-
-    App.ctx.font = gameFont(30);
-    App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(`${level.id}. ${level.name}`, 150, 218);
-    App.ctx.font = gameFont(18);
-    App.ctx.fillStyle = rgb(COLORS.gray);
-    App.ctx.fillText(`BPM ${level.bpm} · music/${level.id}.mp3`, 150, 248);
-
-    App.ctx.font = gameFont(22);
-    App.ctx.fillStyle = rgb(COLORS.gold);
-    App.ctx.fillText("MECHANICS", 80, toggleY - 36);
-
-    toggles.forEach((toggle, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = 80 + col * (toggleW + toggleGap + 80);
-      const y = toggleY + row * (toggleH + toggleGap);
-      const rect = this.btn(toggle.id, toggle.label, x, y, toggleW, toggleH);
-      drawNeonButton(App.ctx, rect, toggle.label, pointInRect(mousePos, rect) && !toggle.disabled, toggle.on && !toggle.disabled);
-      if (toggle.disabled) {
-        App.ctx.fillStyle = "rgba(10,10,18,0.55)";
-        App.ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
-      }
-    });
-
-    App.ctx.font = gameFont(20);
-    App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(`Active: ${this.infiniteMechanicsSummary(setup)}`, 80, toggleY + 130);
+    App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
     App.ctx.fillStyle = rgb(COLORS.green);
-    App.ctx.fillText(`BEST SCORE: ${best}`, 80, toggleY + 158);
+    App.ctx.fillText(`BEST SCORE: ${best}`, blockX, y + 8);
 
-    const play = this.btn("infPlay", "PLAY", null, viewH() - 150, 260, btnHeight(56));
+    const playW = Input.touchMode ? viewW() - pad * 2 : 260;
+    const playX = Input.touchMode ? pad : null;
+    const play = this.btn("infPlay", "PLAY", playX, viewH() - (Input.touchMode ? 200 : 150), playW, btnHeight(Input.touchMode ? 60 : 56));
     drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
+    drawNeonButton(
+      App.ctx,
+      this.btn("back", "BACK", playX, playH() - (Input.touchMode ? 120 : 70), playW, btnHeight(52)),
+      "BACK",
+      pointInRect(mousePos, this.buttons.back),
+    );
     this.finishButtons();
   },
 
@@ -675,10 +603,6 @@ const Screens = {
         return true;
       }
       for (const level of LEVELS) {
-        if (this._hit(`trophy-${level.id}`, pos)) {
-          App.openLevelLeaderboard(level.id);
-          return true;
-        }
         if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
           App.requestStartGame(level);
           return true;
@@ -689,23 +613,12 @@ const Screens = {
 
     if (state === "infinite") {
       const setup = this.infiniteSetup;
-      if (this._hit("infPrev", pos)) {
-        setup.trackId = Math.max(1, setup.trackId - 1);
+      if (this._hit("infCycleTrack", pos)) {
+        cycleInfiniteTrack(setup);
         return true;
       }
-      if (this._hit("infNext", pos)) {
-        setup.trackId = Math.min(LEVELS.length, setup.trackId + 1);
-        return true;
-      }
-      if (this._hit("infRed", pos)) { setup.red = !setup.red; return true; }
-      if (this._hit("infOrange", pos)) { setup.orange = !setup.orange; return true; }
-      if (this._hit("infSliders", pos)) {
-        setup.sliders = !setup.sliders;
-        if (!setup.sliders) setup.sliderRed = false;
-        return true;
-      }
-      if (this._hit("infRedSliders", pos) && setup.sliders) {
-        setup.sliderRed = !setup.sliderRed;
+      if (this._hit("infCycleMechanics", pos)) {
+        cycleInfiniteMechanics(setup);
         return true;
       }
       if (this._hit("infPlay", pos)) {

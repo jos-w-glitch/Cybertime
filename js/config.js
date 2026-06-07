@@ -55,7 +55,15 @@ async function loadGameFont() {
 
 const LOGO_PATH = "assets/logo.png";
 const HOME_ICON_PATH = "assets/1.png";
-const LEADERBOARD_ICON_PATH = "assets/2.png";
+
+const INFINITE_MECHANIC_PRESETS = [
+  { name: "BLUE ONLY", red: false, orange: false, sliders: false, sliderRed: false },
+  { name: "RED BOMBS", red: true, orange: false, sliders: false, sliderRed: false },
+  { name: "ORANGE BOMBS", red: true, orange: true, sliders: false, sliderRed: false },
+  { name: "SLIDERS", red: false, orange: false, sliders: true, sliderRed: false },
+  { name: "RED SLIDERS", red: false, orange: false, sliders: true, sliderRed: true },
+  { name: "FULL MIX", red: true, orange: true, sliders: true, sliderRed: true },
+];
 const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
@@ -223,6 +231,28 @@ const INFINITE_MECHANIC_DEFAULTS = {
 function buildInfiniteModeKey(trackId, mechanics) {
   const m = mechanics;
   return `${trackId}-r${m.red ? 1 : 0}o${m.orange ? 1 : 0}s${m.sliders ? 1 : 0}rs${m.sliderRed ? 1 : 0}`;
+}
+
+function applyInfiniteMechanicPreset(setup, index) {
+  const preset = INFINITE_MECHANIC_PRESETS[index] || INFINITE_MECHANIC_PRESETS[0];
+  setup.mechanicIndex = index;
+  setup.red = preset.red;
+  setup.orange = preset.orange;
+  setup.sliders = preset.sliders;
+  setup.sliderRed = preset.sliderRed;
+}
+
+function cycleInfiniteTrack(setup) {
+  setup.trackId = setup.trackId >= LEVELS.length ? 1 : setup.trackId + 1;
+}
+
+function cycleInfiniteMechanics(setup) {
+  const next = ((setup.mechanicIndex ?? 0) + 1) % INFINITE_MECHANIC_PRESETS.length;
+  applyInfiniteMechanicPreset(setup, next);
+}
+
+function infiniteMechanicName(setup) {
+  return INFINITE_MECHANIC_PRESETS[setup.mechanicIndex ?? 0]?.name || INFINITE_MECHANIC_PRESETS[0].name;
 }
 
 function createInfiniteLevel(sourceLevel, mechanics = {}) {
