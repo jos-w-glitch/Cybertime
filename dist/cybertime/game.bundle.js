@@ -126,22 +126,22 @@ const TUTORIALS = {
       "Never left-click a live bomb!",
     ],
     mobileLines: [
-      "Red bombs start RED — turn BLUE after 1 tap.",
-      "TAP twice total to defuse red bombs.",
-      "Ball color = taps left (blue = 1 tap)!",
+      "Red targets are BOMBS!",
+      "TAP the bomb TWICE to defuse.",
+      "One tap is not enough!",
     ],
   },
   orange: {
     title: "NEW: ORANGE BOMBS",
     lines: [
-      "Orange bombs start ORANGE on desktop!",
-      "RIGHT CLICK to defuse — turns BLUE.",
+      "Orange bombs show up often here!",
+      "RIGHT CLICK to defuse first.",
       "Then LEFT CLICK to confirm!",
     ],
     mobileLines: [
-      "Orange: ORANGE → RED → BLUE as you tap.",
-      "TAP three times total to score.",
-      "Color shows taps left — blue = last tap!",
+      "Orange bombs show up often here!",
+      "TAP the bomb THREE times.",
+      "Tap 1-2 defuse, tap 3 scores!",
     ],
   },
   purple: {
@@ -225,7 +225,7 @@ const HOW_TO_LINES = [
   "",
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
-  "ORANGE bombs look blue — defuse, then click!",
+  "ORANGE bombs (rare): defuse, then click!",
   "PURPLE — middle-click BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
@@ -240,8 +240,8 @@ const HOW_TO_LINES_MOBILE = [
   "HOW TO PLAY",
   "",
   "TAP — hit blue balls",
-  "RED bombs — tap twice (red, then blue)",
-  "ORANGE bombs — tap 3x (orange → red → blue)",
+  "RED bombs — tap twice on target",
+  "ORANGE bombs — tap three times",
   "PURPLE — tap BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
@@ -1715,30 +1715,10 @@ class Target {
     }
   }
 
-  _touchBombColors() {
-    if (this.type === "BOMB") {
-      if (this.mobileTapCount === 0) return { main: COLORS.red, glow: COLORS.redGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
-    if (this.type === "ORANGE") {
-      if (this.mobileTapCount === 0) return { main: COLORS.orange, glow: COLORS.orangeGlow };
-      if (this.mobileTapCount === 1) return { main: COLORS.red, glow: COLORS.redGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
-    return null;
-  }
-
   _colors() {
     if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
-    if (Input.touchMode) {
-      const touchColors = this._touchBombColors();
-      if (touchColors) return touchColors;
-    }
-    if (this.type === "ORANGE" && !Input.touchMode) {
-      if (!this.defused) return { main: COLORS.orange, glow: COLORS.orangeGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
+    if (this.type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }

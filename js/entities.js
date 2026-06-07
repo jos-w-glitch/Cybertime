@@ -247,30 +247,10 @@ class Target {
     }
   }
 
-  _touchBombColors() {
-    if (this.type === "BOMB") {
-      if (this.mobileTapCount === 0) return { main: COLORS.red, glow: COLORS.redGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
-    if (this.type === "ORANGE") {
-      if (this.mobileTapCount === 0) return { main: COLORS.orange, glow: COLORS.orangeGlow };
-      if (this.mobileTapCount === 1) return { main: COLORS.red, glow: COLORS.redGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
-    return null;
-  }
-
   _colors() {
     if (this.type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
     if (this.type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
-    if (Input.touchMode) {
-      const touchColors = this._touchBombColors();
-      if (touchColors) return touchColors;
-    }
-    if (this.type === "ORANGE" && !Input.touchMode) {
-      if (!this.defused) return { main: COLORS.orange, glow: COLORS.orangeGlow };
-      return { main: COLORS.blue, glow: COLORS.blueGlow };
-    }
+    if (this.type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
     return { main: COLORS.red, glow: COLORS.redGlow };
   }
 }
