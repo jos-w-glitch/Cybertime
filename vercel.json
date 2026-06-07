@@ -1,14 +1,13 @@
 {
-  "buildCommand": "bash scripts/build-deploy.sh",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "installCommand": "echo skip",
+  "framework": null,
   "trailingSlash": true,
   "redirects": [
     { "source": "/cyberpunk timing", "destination": "/cybertime/", "permanent": true },
     { "source": "/cyberpunk timing/:path*", "destination": "/cybertime/", "permanent": true },
     { "source": "/cybertime/index.html", "destination": "/cybertime/", "permanent": true }
-  ],
-  "rewrites": [
-    { "source": "/cybertime/", "destination": "/cybertime/index.html" }
   ],
   "headers": [
     {

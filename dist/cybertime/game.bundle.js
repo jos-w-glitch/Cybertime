@@ -1056,7 +1056,7 @@ const PwaInstall = {
   async registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     try {
-      await navigator.serviceWorker.register("./sw.js");
+      await navigator.serviceWorker.register("/cybertime/sw.js", { scope: "/cybertime/" });
     } catch {}
   },
 
