@@ -144,7 +144,7 @@ const App = {
       if (!this.sessionReady) return;
       const inGame = this.state === "game" && this.game?.running;
       if (!inGame && e.button !== 0) return;
-      if (inGame && e.button !== 0 && e.button !== 2) return;
+      if (inGame && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);
@@ -238,6 +238,7 @@ const App = {
     this.pendingLevel = null;
     this.activeTutorial = null;
     this.leaderboardLevelId = null;
+    Screens.shareFeedback = "";
     this.state = "menu";
     AudioEngine.startMenuMusic();
   },

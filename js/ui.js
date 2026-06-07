@@ -10,6 +10,7 @@ const Screens = {
   draggingSlider: false,
   scrollDrag: null,
   infiniteSetup: { trackId: 1, mechanicIndex: 2, red: true, orange: true, sliders: false, sliderRed: false },
+  shareFeedback: "",
 
   resetButtons() {
     this.buttons = {};
@@ -22,20 +23,19 @@ const Screens = {
   },
 
   menuLayout() {
-    const pad = this.screenPad();
     const count = 6;
-    const headerBottom = Input.touchMode ? 288 : 310;
-    const footer = Input.touchMode ? 44 : 28;
-    const gap = Input.touchMode ? 10 : 8;
+    const headerBottom = Input.touchMode ? 252 : 268;
+    const footer = Input.touchMode ? 40 : 28;
+    const gap = Input.touchMode ? 14 : 10;
     const avail = viewH() - headerBottom - footer;
-    const btnH = Math.max(btnHeight(Input.touchMode ? 56 : 52), Math.floor((avail - gap * (count - 1)) / count));
+    const btnH = Math.min(btnHeight(Input.touchMode ? 62 : 56), Math.floor((avail - gap * (count - 1)) / count));
+    const blockH = count * btnH + gap * (count - 1);
     return {
-      pad,
+      pad: this.screenPad(),
       btnH,
-      btnW: viewW() - pad * 2,
-      top: headerBottom,
+      top: headerBottom + Math.floor((avail - blockH) / 2),
       gap,
-      titleSize: Input.touchMode ? 88 : 100,
+      titleSize: Input.touchMode ? 80 : 92,
     };
   },
 
@@ -148,6 +148,23 @@ const Screens = {
     this.clickAreas = { ...this.buttons };
   },
 
+  canShareGame(game) {
+    const r = game?.lastRewards;
+    if (!r || game.score <= 0) return false;
+    return r.success || r.infinite;
+  },
+
+  drawCenteredLines(ctx, lines, y, fontSize, color) {
+    ctx.font = uiFont(fontSize);
+    ctx.fillStyle = rgb(color);
+    let drawY = y;
+    lines.forEach((line) => {
+      ctx.fillText(line, (viewW() - ctx.measureText(line).width) / 2, drawY);
+      drawY += fontSize + 10;
+    });
+    return drawY;
+  },
+
   drawMenu(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
@@ -183,9 +200,10 @@ const Screens = {
       ["howto", "HOW TO PLAY"],
     ];
     let y = layout.top;
-    labels.forEach(([id, label], index) => {
-      const rect = this.btn(id, label, layout.pad, y, layout.btnW, layout.btnH);
-      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect));
+    labels.forEach(([id, label]) => {
+      const small = id === "howto";
+      const rect = this.btn(id, label, null, y, null, layout.btnH);
+      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), small);
       y += layout.btnH + layout.gap;
     });
 
@@ -598,14 +616,40 @@ const Screens = {
       App.ctx.fillText(line, (viewW() - App.ctx.measureText(line).width) / 2, 200 + i * 36);
     });
 
-    if (!infinite) drawLeaderboardPanel(App.ctx, save, game.level.id, 80, 330);
+    const canShare = this.canShareGame(game);
+    let blockY = 200 + statLines.length * 36 + 24;
+    if (canShare) {
+      blockY = this.drawCenteredLines(
+        App.ctx,
+        [Share.buildMessage(game.score, game.level)],
+        blockY,
+        Input.touchMode ? 18 : 20,
+        COLORS.gold,
+      ) + 8;
+      const shareBtn = this.btn("share", "SHARE", null, blockY, null, btnHeight(48));
+      drawNeonButton(App.ctx, shareBtn, "SHARE", pointInRect(mousePos, shareBtn), true);
+      blockY = shareBtn.y + shareBtn.h + 12;
+      if (this.shareFeedback) {
+        App.ctx.font = uiFont(16);
+        App.ctx.fillStyle = rgb(COLORS.green);
+        const note = this.shareFeedback;
+        App.ctx.fillText(note, (viewW() - App.ctx.measureText(note).width) / 2, blockY);
+        blockY += 24;
+      }
+    }
+
+    const btnY = viewH() - (Input.touchMode ? 110 : 90);
+    if (!infinite) {
+      const leaderboardY = canShare ? Math.min(blockY + 8, btnY - 170) : 330;
+      drawLeaderboardPanel(App.ctx, save, game.level.id, 80, leaderboardY);
+    }
 
     if (success && r.unlockedNext && !infinite) {
-      drawNeonButton(App.ctx, this.btn("next", "NEXT", null, 580), "NEXT", pointInRect(mousePos, this.buttons.next));
+      drawNeonButton(App.ctx, this.btn("next", "NEXT", null, btnY), "NEXT", pointInRect(mousePos, this.buttons.next));
     } else if (!success) {
-      drawNeonButton(App.ctx, this.btn("restart", "RESTART", null, 580), "RESTART", pointInRect(mousePos, this.buttons.restart));
+      drawNeonButton(App.ctx, this.btn("restart", "RESTART", null, btnY), "RESTART", pointInRect(mousePos, this.buttons.restart));
     } else {
-      drawNeonButton(App.ctx, this.btn("restart", "RETRY", null, 580), "RETRY", pointInRect(mousePos, this.buttons.restart));
+      drawNeonButton(App.ctx, this.btn("restart", "RETRY", null, btnY), "RETRY", pointInRect(mousePos, this.buttons.restart));
     }
     this.finishButtons();
   },
@@ -703,6 +747,15 @@ const Screens = {
 
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
+      if (this._hit("share", pos)) {
+        Share.shareScore(App.game.score, App.game.level).then((result) => {
+          if (result === "copied") {
+            Screens.shareFeedback = "Copied to clipboard!";
+            setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+          }
+        });
+        return true;
+      }
       if (this._hit("next", pos)) { App.startNextLevel(); return true; }
       if (this._hit("restart", pos)) { App.requestStartGame(App.lastLevel); return true; }
     }

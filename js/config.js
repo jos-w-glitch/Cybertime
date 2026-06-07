@@ -83,7 +83,7 @@ const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
-const PURPLE_DUAL_WINDOW_MS = 350;
+const PURPLE_DUAL_WINDOW_MS = 1000;
 
 const COLORS = {
   bg: [10, 10, 18],
@@ -147,14 +147,14 @@ const TUTORIALS = {
   purple: {
     title: "NEW: PURPLE DUAL",
     lines: [
-      "Purple targets need BOTH mouse buttons!",
-      "LEFT + RIGHT CLICK at the same time.",
-      "Hit both buttons on one purple ball!",
+      "Two PURPLE balls appear together!",
+      "MIDDLE CLICK both within one second.",
+      "One click is not enough — get both!",
     ],
     mobileLines: [
       "Two PURPLE balls appear together!",
-      "TAP BOTH at the same time.",
-      "Both must be hit within a moment!",
+      "TAP BOTH within one second.",
+      "One tap is not enough — get both!",
     ],
   },
   sliders: {
@@ -226,7 +226,7 @@ const HOW_TO_LINES = [
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
   "ORANGE bombs look blue — defuse, then click!",
-  "PURPLE — left + right click together!",
+  "PURPLE — middle-click BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",
@@ -242,7 +242,7 @@ const HOW_TO_LINES_MOBILE = [
   "TAP — hit blue balls",
   "RED bombs — blue ball, 2 below, tap twice",
   "ORANGE bombs — red ball, 3 below, tap 3x",
-  "PURPLE — tap BOTH purple balls together!",
+  "PURPLE — tap BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",

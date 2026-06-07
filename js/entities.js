@@ -73,6 +73,7 @@ class Target {
     this.isSlider = isSlider;
     this.defused = false;
     this.mobileTapCount = 0;
+    this.purpleTapped = false;
     this.confirmExpiresAt = 0;
     this.hitZoneX = viewW() / 2;
     this.pulseAngle = Math.random() * 360;
@@ -109,6 +110,7 @@ class Target {
     this.isActive = true;
     this.defused = false;
     this.mobileTapCount = 0;
+    this.purpleTapped = false;
     this.activatedAt = now;
     this.expiresAt = now + this.hitWindowMs;
     if (this.type === "BOMB" || this.type === "ORANGE") {
@@ -184,7 +186,7 @@ class Target {
       radius += Math.floor((3 + 5 * urgency) * Math.sin(this.pulseAngle));
     }
 
-    if (this.type === "ORANGE" && this.defused) {
+    if ((this.type === "ORANGE" && this.defused) || (this.type === "PURPLE" && this.purpleTapped)) {
       ctx.strokeStyle = rgb(COLORS.green);
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -244,19 +246,12 @@ class Target {
       ctx.textAlign = "left";
     }
 
-    if (this.type === "PURPLE" && Input.touchMode) {
+    if (this.type === "PURPLE" && !this.purpleTapped) {
       ctx.font = gameFont(18);
       ctx.fillStyle = rgb(COLORS.gold);
       ctx.textAlign = "center";
-      ctx.fillText("BOTH!", this.x, this.y + radius + 28);
-      ctx.textAlign = "left";
-    }
-
-    if (this.type === "PURPLE" && !Input.touchMode) {
-      ctx.font = gameFont(18);
-      ctx.fillStyle = rgb(COLORS.gold);
-      ctx.textAlign = "center";
-      ctx.fillText("L+R", this.x, this.y + radius + 28);
+      const hint = Input.touchMode ? "BOTH!" : "MID";
+      ctx.fillText(hint, this.x, this.y + radius + 28);
       ctx.textAlign = "left";
     }
   }
@@ -338,7 +333,5 @@ function createGame(level, now) {
     purplePartner: null,
     purpleTapMain: 0,
     purpleTapPartner: 0,
-    purpleBallAt: 0,
-    purpleBombAt: 0,
   };
 }

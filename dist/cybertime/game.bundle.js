@@ -83,7 +83,7 @@ const ICON_BUTTON_SIZE = 56;
 const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
-const PURPLE_DUAL_WINDOW_MS = 350;
+const PURPLE_DUAL_WINDOW_MS = 1000;
 
 const COLORS = {
   bg: [10, 10, 18],
@@ -147,14 +147,14 @@ const TUTORIALS = {
   purple: {
     title: "NEW: PURPLE DUAL",
     lines: [
-      "Purple targets need BOTH mouse buttons!",
-      "LEFT + RIGHT CLICK at the same time.",
-      "Hit both buttons on one purple ball!",
+      "Two PURPLE balls appear together!",
+      "MIDDLE CLICK both within one second.",
+      "One click is not enough — get both!",
     ],
     mobileLines: [
       "Two PURPLE balls appear together!",
-      "TAP BOTH at the same time.",
-      "Both must be hit within a moment!",
+      "TAP BOTH within one second.",
+      "One tap is not enough — get both!",
     ],
   },
   sliders: {
@@ -226,7 +226,7 @@ const HOW_TO_LINES = [
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
   "ORANGE bombs look blue — defuse, then click!",
-  "PURPLE — left + right click together!",
+  "PURPLE — middle-click BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",
@@ -242,7 +242,7 @@ const HOW_TO_LINES_MOBILE = [
   "TAP — hit blue balls",
   "RED bombs — blue ball, 2 below, tap twice",
   "ORANGE bombs — red ball, 3 below, tap 3x",
-  "PURPLE — tap BOTH purple balls together!",
+  "PURPLE — tap BOTH balls within 1 second!",
   "Targets appear on the BEAT — hit fast!",
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",
@@ -979,6 +979,9 @@ const Input = {
     applyViewport(canvas);
     canvas.style.cursor = this.touchMode ? "default" : "none";
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    canvas.addEventListener("auxclick", (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
   },
 
   syncPos(clientX, clientY) {
@@ -1005,6 +1008,7 @@ const Input = {
     if (rawButton === this.save.keys.ball) return "ball";
     if (rawButton === this.save.keys.bomb) return "bomb";
     if (rawButton === 0) return "ball";
+    if (rawButton === 1) return "purple";
     if (rawButton === 2) return "bomb";
     return null;
   },
@@ -1537,6 +1541,7 @@ class Target {
     this.isSlider = isSlider;
     this.defused = false;
     this.mobileTapCount = 0;
+    this.purpleTapped = false;
     this.confirmExpiresAt = 0;
     this.hitZoneX = viewW() / 2;
     this.pulseAngle = Math.random() * 360;
@@ -1573,6 +1578,7 @@ class Target {
     this.isActive = true;
     this.defused = false;
     this.mobileTapCount = 0;
+    this.purpleTapped = false;
     this.activatedAt = now;
     this.expiresAt = now + this.hitWindowMs;
     if (this.type === "BOMB" || this.type === "ORANGE") {
@@ -1648,7 +1654,7 @@ class Target {
       radius += Math.floor((3 + 5 * urgency) * Math.sin(this.pulseAngle));
     }
 
-    if (this.type === "ORANGE" && this.defused) {
+    if ((this.type === "ORANGE" && this.defused) || (this.type === "PURPLE" && this.purpleTapped)) {
       ctx.strokeStyle = rgb(COLORS.green);
       ctx.lineWidth = 4;
       ctx.beginPath();
@@ -1708,19 +1714,12 @@ class Target {
       ctx.textAlign = "left";
     }
 
-    if (this.type === "PURPLE" && Input.touchMode) {
+    if (this.type === "PURPLE" && !this.purpleTapped) {
       ctx.font = gameFont(18);
       ctx.fillStyle = rgb(COLORS.gold);
       ctx.textAlign = "center";
-      ctx.fillText("BOTH!", this.x, this.y + radius + 28);
-      ctx.textAlign = "left";
-    }
-
-    if (this.type === "PURPLE" && !Input.touchMode) {
-      ctx.font = gameFont(18);
-      ctx.fillStyle = rgb(COLORS.gold);
-      ctx.textAlign = "center";
-      ctx.fillText("L+R", this.x, this.y + radius + 28);
+      const hint = Input.touchMode ? "BOTH!" : "MID";
+      ctx.fillText(hint, this.x, this.y + radius + 28);
       ctx.textAlign = "left";
     }
   }
@@ -1802,8 +1801,6 @@ function createGame(level, now) {
     purplePartner: null,
     purpleTapMain: 0,
     purpleTapPartner: 0,
-    purpleBallAt: 0,
-    purpleBombAt: 0,
   };
 }
 const AudioEngine = {
@@ -2065,8 +2062,7 @@ const GameLogic = {
     if (!action) return;
 
     if (game.currentTarget.type === "PURPLE") {
-      if (Input.touchMode) this._handleMobilePurple(game, pos, now);
-      else this._handleDesktopPurple(game, button, pos, now);
+      this._handlePurplePair(game, button, pos, now);
       return;
     }
 
@@ -2094,86 +2090,70 @@ const GameLogic = {
     this._resolveHit(game, action, now);
   },
 
-  _handleMobilePurple(game, pos, now) {
+  _handlePurplePair(game, button, pos, now) {
     const main = game.currentTarget;
     const partner = game.purplePartner;
+    if (!partner) return;
+
+    if (!Input.touchMode && Input.resolveButton(button) !== "purple") {
+      const mainHit = main.checkClick(pos);
+      const partnerHit = partner.checkClick(pos);
+      if (mainHit === "HIT" || partnerHit === "HIT") this._wrongHit(game, main);
+      return;
+    }
+
     const mainHit = main.checkClick(pos);
-    const partnerHit = partner ? partner.checkClick(pos) : null;
+    const partnerHit = partner.checkClick(pos);
 
     if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") {
-      this._resetPurpleState(game);
+      this._resetPurplePair(game);
       this._registerMiss(game, pos);
       return;
     }
     if (mainHit !== "HIT" && partnerHit !== "HIT") return;
 
-    if (mainHit === "HIT") game.purpleTapMain = now;
-    if (partnerHit === "HIT") game.purpleTapPartner = now;
+    if (mainHit === "HIT" && !game.purpleTapMain) {
+      game.purpleTapMain = now;
+      main.purpleTapped = true;
+    }
+    if (partnerHit === "HIT" && !game.purpleTapPartner) {
+      game.purpleTapPartner = now;
+      partner.purpleTapped = true;
+    }
 
     if (!game.purpleTapMain || !game.purpleTapPartner) {
       AudioEngine.playDefuse();
       return;
     }
     if (Math.abs(game.purpleTapMain - game.purpleTapPartner) > PURPLE_DUAL_WINDOW_MS) {
-      this._resetPurpleState(game);
+      this._resetPurplePair(game);
       this._wrongHit(game, main);
       return;
     }
 
-    this._resetPurpleState(game);
+    const partner = game.purplePartner;
+    this._resetPurplePair(game);
     game.combo += 1;
     game.comboPeak = Math.max(game.comboPeak, game.combo);
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
     AudioEngine.playHit();
     this._advanceTarget(game, main, COLORS.purple, now);
+    if (partner) game.flippedTargets.push(new FlippedTarget(partner.x, partner.y, partner.radius, COLORS.purple));
   },
 
-  _handleDesktopPurple(game, button, pos, now) {
-    const target = game.currentTarget;
-    const hit = target.checkClick(pos);
-    if (hit === "MISS") {
-      this._resetPurpleState(game);
-      this._registerMiss(game, pos);
-      return;
-    }
-    if (hit !== "HIT") return;
-
-    const action = Input.resolveButton(button);
-    if (action === "ball") game.purpleBallAt = now;
-    if (action === "bomb") game.purpleBombAt = now;
-
-    if (!game.purpleBallAt || !game.purpleBombAt) {
-      AudioEngine.playDefuse();
-      return;
-    }
-    if (Math.abs(game.purpleBallAt - game.purpleBombAt) > PURPLE_DUAL_WINDOW_MS) {
-      this._resetPurpleState(game);
-      this._wrongHit(game, target);
-      return;
-    }
-
-    this._resetPurpleState(game);
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
-    const points = game.combo + 1;
-    game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
-    AudioEngine.playHit();
-    this._advanceTarget(game, target, COLORS.purple, now);
-  },
-
-  _resetPurpleState(game) {
+  _resetPurplePair(game) {
+    if (game.currentTarget?.type === "PURPLE") game.currentTarget.purpleTapped = false;
+    if (game.purplePartner) game.purplePartner.purpleTapped = false;
     game.purplePartner = null;
     game.purpleTapMain = 0;
     game.purpleTapPartner = 0;
-    game.purpleBallAt = 0;
-    game.purpleBombAt = 0;
   },
 
   _syncPurplePair(game, now) {
-    this._resetPurpleState(game);
+    this._resetPurplePair(game);
     const target = game.currentTarget;
-    if (target.type !== "PURPLE" || !Input.touchMode) return;
+    if (target.type !== "PURPLE") return;
 
     const partner = new Target(game.level, false);
     partner.type = "PURPLE";
@@ -2296,14 +2276,14 @@ const GameLogic = {
   _wrongHit(game, target) {
     if (target.mobileTapCount !== undefined) target.mobileTapCount = 0;
     if (target.defused) target.defused = false;
-    this._resetPurpleState(game);
+    this._resetPurplePair(game);
     game.combo = 0;
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
 
   _advanceTarget(game, target, color, now) {
-    this._resetPurpleState(game);
+    this._resetPurplePair(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
@@ -2420,9 +2400,42 @@ const GameLogic = {
     ctx.font = gameFont(16);
     ctx.fillStyle = rgb(COLORS.text);
     const hint = level.allowPurple
-      ? "RED: 2 taps  |  ORANGE: 3 taps  |  PURPLE: tap BOTH"
+      ? "RED: 2 taps  |  ORANGE: 3 taps  |  PURPLE: get BOTH within 1s"
       : "RED: 2 taps  |  ORANGE: 3 taps";
     ctx.fillText(hint, (viewW() - ctx.measureText(hint).width) / 2, viewH() - 40);
+  },
+};
+const SHARE_GAME_URL = "https://www.joseph-weiss.com/cybertime/";
+
+const Share = {
+  buildMessage(score, level) {
+    if (level?.infinite) {
+      return `I got ${score} points in CyberTime Infinite! Can you beat me?`;
+    }
+    return `I got ${score} points in CyberTime! Can you beat me?`;
+  },
+
+  async shareScore(score, level) {
+    const message = this.buildMessage(score, level);
+    const payload = `${message}\n${SHARE_GAME_URL}`;
+
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "CyberTime", text: message, url: SHARE_GAME_URL });
+        return "shared";
+      } catch (err) {
+        if (err?.name === "AbortError") return null;
+      }
+    }
+
+    if (navigator.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(payload);
+        return "copied";
+      } catch {}
+    }
+
+    return null;
   },
 };
 const Screens = {
@@ -2437,6 +2450,7 @@ const Screens = {
   draggingSlider: false,
   scrollDrag: null,
   infiniteSetup: { trackId: 1, mechanicIndex: 2, red: true, orange: true, sliders: false, sliderRed: false },
+  shareFeedback: "",
 
   resetButtons() {
     this.buttons = {};
@@ -2449,20 +2463,19 @@ const Screens = {
   },
 
   menuLayout() {
-    const pad = this.screenPad();
     const count = 6;
-    const headerBottom = Input.touchMode ? 288 : 310;
-    const footer = Input.touchMode ? 44 : 28;
-    const gap = Input.touchMode ? 10 : 8;
+    const headerBottom = Input.touchMode ? 252 : 268;
+    const footer = Input.touchMode ? 40 : 28;
+    const gap = Input.touchMode ? 14 : 10;
     const avail = viewH() - headerBottom - footer;
-    const btnH = Math.max(btnHeight(Input.touchMode ? 56 : 52), Math.floor((avail - gap * (count - 1)) / count));
+    const btnH = Math.min(btnHeight(Input.touchMode ? 62 : 56), Math.floor((avail - gap * (count - 1)) / count));
+    const blockH = count * btnH + gap * (count - 1);
     return {
-      pad,
+      pad: this.screenPad(),
       btnH,
-      btnW: viewW() - pad * 2,
-      top: headerBottom,
+      top: headerBottom + Math.floor((avail - blockH) / 2),
       gap,
-      titleSize: Input.touchMode ? 88 : 100,
+      titleSize: Input.touchMode ? 80 : 92,
     };
   },
 
@@ -2575,6 +2588,23 @@ const Screens = {
     this.clickAreas = { ...this.buttons };
   },
 
+  canShareGame(game) {
+    const r = game?.lastRewards;
+    if (!r || game.score <= 0) return false;
+    return r.success || r.infinite;
+  },
+
+  drawCenteredLines(ctx, lines, y, fontSize, color) {
+    ctx.font = uiFont(fontSize);
+    ctx.fillStyle = rgb(color);
+    let drawY = y;
+    lines.forEach((line) => {
+      ctx.fillText(line, (viewW() - ctx.measureText(line).width) / 2, drawY);
+      drawY += fontSize + 10;
+    });
+    return drawY;
+  },
+
   drawMenu(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
@@ -2610,9 +2640,10 @@ const Screens = {
       ["howto", "HOW TO PLAY"],
     ];
     let y = layout.top;
-    labels.forEach(([id, label], index) => {
-      const rect = this.btn(id, label, layout.pad, y, layout.btnW, layout.btnH);
-      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect));
+    labels.forEach(([id, label]) => {
+      const small = id === "howto";
+      const rect = this.btn(id, label, null, y, null, layout.btnH);
+      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), small);
       y += layout.btnH + layout.gap;
     });
 
@@ -3025,14 +3056,40 @@ const Screens = {
       App.ctx.fillText(line, (viewW() - App.ctx.measureText(line).width) / 2, 200 + i * 36);
     });
 
-    if (!infinite) drawLeaderboardPanel(App.ctx, save, game.level.id, 80, 330);
+    const canShare = this.canShareGame(game);
+    let blockY = 200 + statLines.length * 36 + 24;
+    if (canShare) {
+      blockY = this.drawCenteredLines(
+        App.ctx,
+        [Share.buildMessage(game.score, game.level)],
+        blockY,
+        Input.touchMode ? 18 : 20,
+        COLORS.gold,
+      ) + 8;
+      const shareBtn = this.btn("share", "SHARE", null, blockY, null, btnHeight(48));
+      drawNeonButton(App.ctx, shareBtn, "SHARE", pointInRect(mousePos, shareBtn), true);
+      blockY = shareBtn.y + shareBtn.h + 12;
+      if (this.shareFeedback) {
+        App.ctx.font = uiFont(16);
+        App.ctx.fillStyle = rgb(COLORS.green);
+        const note = this.shareFeedback;
+        App.ctx.fillText(note, (viewW() - App.ctx.measureText(note).width) / 2, blockY);
+        blockY += 24;
+      }
+    }
+
+    const btnY = viewH() - (Input.touchMode ? 110 : 90);
+    if (!infinite) {
+      const leaderboardY = canShare ? Math.min(blockY + 8, btnY - 170) : 330;
+      drawLeaderboardPanel(App.ctx, save, game.level.id, 80, leaderboardY);
+    }
 
     if (success && r.unlockedNext && !infinite) {
-      drawNeonButton(App.ctx, this.btn("next", "NEXT", null, 580), "NEXT", pointInRect(mousePos, this.buttons.next));
+      drawNeonButton(App.ctx, this.btn("next", "NEXT", null, btnY), "NEXT", pointInRect(mousePos, this.buttons.next));
     } else if (!success) {
-      drawNeonButton(App.ctx, this.btn("restart", "RESTART", null, 580), "RESTART", pointInRect(mousePos, this.buttons.restart));
+      drawNeonButton(App.ctx, this.btn("restart", "RESTART", null, btnY), "RESTART", pointInRect(mousePos, this.buttons.restart));
     } else {
-      drawNeonButton(App.ctx, this.btn("restart", "RETRY", null, 580), "RETRY", pointInRect(mousePos, this.buttons.restart));
+      drawNeonButton(App.ctx, this.btn("restart", "RETRY", null, btnY), "RETRY", pointInRect(mousePos, this.buttons.restart));
     }
     this.finishButtons();
   },
@@ -3130,6 +3187,15 @@ const Screens = {
 
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
+      if (this._hit("share", pos)) {
+        Share.shareScore(App.game.score, App.game.level).then((result) => {
+          if (result === "copied") {
+            Screens.shareFeedback = "Copied to clipboard!";
+            setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+          }
+        });
+        return true;
+      }
       if (this._hit("next", pos)) { App.startNextLevel(); return true; }
       if (this._hit("restart", pos)) { App.requestStartGame(App.lastLevel); return true; }
     }
@@ -3326,7 +3392,7 @@ const App = {
       if (!this.sessionReady) return;
       const inGame = this.state === "game" && this.game?.running;
       if (!inGame && e.button !== 0) return;
-      if (inGame && e.button !== 0 && e.button !== 2) return;
+      if (inGame && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);
@@ -3420,6 +3486,7 @@ const App = {
     this.pendingLevel = null;
     this.activeTutorial = null;
     this.leaderboardLevelId = null;
+    Screens.shareFeedback = "";
     this.state = "menu";
     AudioEngine.startMenuMusic();
   },

@@ -14,6 +14,9 @@ const Input = {
     applyViewport(canvas);
     canvas.style.cursor = this.touchMode ? "default" : "none";
     canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+    canvas.addEventListener("auxclick", (e) => {
+      if (e.button === 1) e.preventDefault();
+    });
   },
 
   syncPos(clientX, clientY) {
@@ -40,6 +43,7 @@ const Input = {
     if (rawButton === this.save.keys.ball) return "ball";
     if (rawButton === this.save.keys.bomb) return "bomb";
     if (rawButton === 0) return "ball";
+    if (rawButton === 1) return "purple";
     if (rawButton === 2) return "bomb";
     return null;
   },
