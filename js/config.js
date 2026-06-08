@@ -147,9 +147,9 @@ const TUTORIALS = {
   purple: {
     title: "NEW: PURPLE DUAL",
     lines: [
-      "Two PURPLE balls appear together!",
-      "MIDDLE CLICK both within one second.",
-      "One click is not enough — get both!",
+      "Purple targets need the MIDDLE mouse button!",
+      "Click the scroll wheel on the purple ball.",
+      "Left and right clicks won't work here!",
     ],
     mobileLines: [
       "Two PURPLE balls appear together!",
@@ -226,7 +226,7 @@ const HOW_TO_LINES = [
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
   "ORANGE bombs (rare): defuse, then click!",
-  "PURPLE — middle-click BOTH balls within 1 second!",
+  "PURPLE — middle-click the purple ball!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",

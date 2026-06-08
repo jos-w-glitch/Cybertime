@@ -147,9 +147,9 @@ const TUTORIALS = {
   purple: {
     title: "NEW: PURPLE DUAL",
     lines: [
-      "Two PURPLE balls appear together!",
-      "MIDDLE CLICK both within one second.",
-      "One click is not enough — get both!",
+      "Purple targets need the MIDDLE mouse button!",
+      "Click the scroll wheel on the purple ball.",
+      "Left and right clicks won't work here!",
     ],
     mobileLines: [
       "Two PURPLE balls appear together!",
@@ -226,7 +226,7 @@ const HOW_TO_LINES = [
   "LEFT CLICK  — hit blue balls",
   "RIGHT CLICK — defuse red bombs",
   "ORANGE bombs (rare): defuse, then click!",
-  "PURPLE — middle-click BOTH balls within 1 second!",
+  "PURPLE — middle-click the purple ball!",
   "Targets appear on the BEAT — hit fast!",
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",
@@ -2066,7 +2066,8 @@ const GameLogic = {
     if (!action) return;
 
     if (game.currentTarget.type === "PURPLE") {
-      this._handlePurplePair(game, button, pos, now);
+      if (Input.touchMode) this._handlePurplePair(game, button, pos, now);
+      else this._handleDesktopPurple(game, button, pos, now);
       return;
     }
 
@@ -2098,13 +2099,6 @@ const GameLogic = {
     const main = game.currentTarget;
     const partner = game.purplePartner;
     if (!partner) return;
-
-    if (!Input.touchMode && Input.resolveButton(button) !== "purple") {
-      const mainHit = main.checkClick(pos);
-      const partnerHit = partner.checkClick(pos);
-      if (mainHit === "HIT" || partnerHit === "HIT") this._wrongHit(game, main);
-      return;
-    }
 
     const mainHit = main.checkClick(pos);
     const partnerHit = partner.checkClick(pos);
@@ -2145,6 +2139,28 @@ const GameLogic = {
     if (partner) game.flippedTargets.push(new FlippedTarget(partner.x, partner.y, partner.radius, COLORS.purple));
   },
 
+  _handleDesktopPurple(game, button, pos, now) {
+    const target = game.currentTarget;
+    const hit = target.checkClick(pos);
+    if (hit === "SAFE_ZONE") {
+      this._registerMiss(game, pos);
+      return;
+    }
+    if (hit !== "HIT") return;
+
+    if (Input.resolveButton(button) !== "purple") {
+      this._wrongHit(game, target);
+      return;
+    }
+
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    const points = game.combo + 1;
+    game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
+    AudioEngine.playHit();
+    this._advanceTarget(game, target, COLORS.purple, now);
+  },
+
   _resetPurplePair(game) {
     if (game.currentTarget?.type === "PURPLE") game.currentTarget.purpleTapped = false;
     if (game.purplePartner) game.purplePartner.purpleTapped = false;
@@ -2156,7 +2172,7 @@ const GameLogic = {
   _syncPurplePair(game, now) {
     this._resetPurplePair(game);
     const target = game.currentTarget;
-    if (target.type !== "PURPLE") return;
+    if (target.type !== "PURPLE" || !Input.touchMode) return;
 
     const partner = new Target(game.level, false);
     partner.type = "PURPLE";
