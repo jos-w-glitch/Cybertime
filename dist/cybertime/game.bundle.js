@@ -38,11 +38,11 @@ function btnHeight(size = 52) {
 }
 
 function uiBtnHeight(size = 48) {
-  return Math.round(size * mobileUiScale() * accessibilityScale());
+  return Math.round(size);
 }
 
 function uiBtnGap(size = 12) {
-  return Math.round(size * mobileUiScale());
+  return Input?.touchMode ? Math.round(size + 10) : Math.round(size);
 }
 
 function iconButtonSize() {
@@ -4473,7 +4473,7 @@ const Screens = {
   },
 
   buttonStackGap() {
-    return Input.touchMode ? 18 : 12;
+    return Input.touchMode ? 20 : 12;
   },
 
   actionButtonWidth() {
