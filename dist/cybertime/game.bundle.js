@@ -2747,11 +2747,15 @@ const Share = {
   _videoBlob: null,
   _preparePromise: null,
   _status: "idle",
+  _failReason: null,
+  _renderTarget: null,
 
   reset() {
     this._videoBlob = null;
     this._preparePromise = null;
     this._status = "idle";
+    this._failReason = null;
+    this._renderTarget = null;
   },
 
   buildMessage(score, level) {
@@ -2776,9 +2780,14 @@ const Share = {
 
   async renderReplayBlob(replay) {
     const renderer = await this.loadRenderer();
-    const supported = await renderer.canRenderReplayVideo();
-    if (!supported) return null;
-    return renderer.renderCyberTimeReplay(replay);
+    const details = await renderer.getReplayRenderTarget();
+    if (!details?.canRender || !details?.target) {
+      this._renderTarget = null;
+      this._failReason = details?.issues?.[0] ? String(details.issues[0]) : "unsupported browser";
+      return null;
+    }
+    this._renderTarget = details.target;
+    return renderer.renderCyberTimeReplay(replay, details.target);
   },
 
   prepareReplay(game) {
@@ -2794,11 +2803,15 @@ const Share = {
       .then((blob) => {
         this._videoBlob = blob;
         this._status = blob ? "ready" : "failed";
+        if (!blob && this._failReason) {
+          Screens.shareFeedback = `VIDEO UNAVAILABLE: ${this._failReason}`;
+        }
         return blob;
       })
       .catch((err) => {
         console.warn("Replay prepare failed", err);
         this._status = "failed";
+        Screens.shareFeedback = "VIDEO UNAVAILABLE";
         return null;
       });
     return this._preparePromise;
@@ -2834,7 +2847,9 @@ const Share = {
   },
 
   async shareVideoFile(blob) {
-    const file = new File([blob], "cybertime-replay.mp4", { type: "video/mp4" });
+    const ext = this._renderTarget?.ext ?? "mp4";
+    const mime = this._renderTarget?.mime ?? "video/mp4";
+    const file = new File([blob], `cybertime-replay.${ext}`, { type: mime });
 
     if (navigator.share) {
       const payloads = [
