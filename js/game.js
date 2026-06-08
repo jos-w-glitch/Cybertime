@@ -27,6 +27,22 @@ const GameLogic = {
     }
   },
 
+  _bumpCombo(game, now) {
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._onComboMilestone(game, now);
+  },
+
+  _onComboMilestone(game, now) {
+    if (!game.infinite || game.goldenBonus) return;
+    if (game.combo < GOLDEN_BONUS_COMBO_STEP || game.combo % GOLDEN_BONUS_COMBO_STEP !== 0) return;
+    if (game.lastGoldenCombo === game.combo) return;
+    game.lastGoldenCombo = game.combo;
+    const bonus = new GoldenBonus(game);
+    bonus.activate(now);
+    game.goldenBonus = bonus;
+  },
+
   handleStartClick(game, button, pos, now) {
     const start = game.startTarget;
     if (!start) return null;
@@ -117,6 +133,8 @@ const GameLogic = {
     const action = Input.resolveButton(button);
     if (!action) return;
 
+    if (this._tryCollectGoldenBonus(game, action, pos, now)) return;
+
     if (game.currentTarget.type === "PURPLE") {
       if (Input.touchMode) this._handlePurplePair(game, button, pos, now);
       else this._handleDesktopPurple(game, button, pos, now);
@@ -124,7 +142,7 @@ const GameLogic = {
     }
 
     const result = game.currentTarget.checkClick(pos);
-    if (result === "MISS") {
+    if (result === "MISS" || (game.infinite && result === "SAFE_ZONE")) {
       this._registerMiss(game, pos);
       return;
     }
@@ -182,8 +200,7 @@ const GameLogic = {
     }
 
     this._resetPurplePair(game);
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -205,8 +222,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -257,8 +273,7 @@ const GameLogic = {
     }
 
     target.mobileTapCount = 0;
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -289,8 +304,7 @@ const GameLogic = {
     }
 
     target.mobileTapCount = 0;
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -317,8 +331,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -335,8 +348,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -349,6 +361,7 @@ const GameLogic = {
     if (target.defused) target.defused = false;
     this._resetPurplePair(game);
     game.combo = 0;
+    game.lastGoldenCombo = 0;
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -364,8 +377,29 @@ const GameLogic = {
 
   _registerMiss(game, pos) {
     game.combo = 0;
-    game.floatingTexts.push(new FloatingText("-1", pos.x, pos.y, COLORS.red, -1));
+    game.lastGoldenCombo = 0;
+    game.floatingTexts.push(new FloatingText(game.infinite ? "MISS" : "-1", pos.x, pos.y, COLORS.red, 0));
     AudioEngine.playMiss();
+    if (game.infinite) game.hearts -= 1;
+  },
+
+  _skipExpiredTarget(game, now) {
+    this._resetPurplePair(game);
+    game.currentTarget = game.nextTarget;
+    game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
+    game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
+  },
+
+  _tryCollectGoldenBonus(game, action, pos, now) {
+    const bonus = game.goldenBonus;
+    if (!bonus || bonus.isExpired(now) || !bonus.checkClick(pos)) return false;
+    if (action !== "ball") return false;
+    game.goldenBonus = null;
+    const points = GOLDEN_BONUS_POINTS + Math.min(game.combo, 8);
+    game.floatingTexts.push(new FloatingText(`+${points}`, bonus.x, bonus.y, COLORS.gold, points));
+    AudioEngine.playHit();
+    return true;
   },
 
   update(game, now) {
@@ -386,12 +420,33 @@ const GameLogic = {
       }
       if (msLeft <= 0) return "time";
     }
-    if (game.currentTarget.isOffScreen) return "expired";
+    if (game.infinite && game.hearts <= 0) return "hearts";
+
+    if (game.currentTarget.isOffScreen) {
+      if (game.infinite) {
+        game.hearts -= 1;
+        if (game.hearts <= 0) return "hearts";
+        this._skipExpiredTarget(game, now);
+      } else {
+        return "expired";
+      }
+    }
     if (!game.graceUntil || now > game.graceUntil) {
-      if (game.currentTarget.isExpired(now)) return "expired";
+      if (game.currentTarget.isExpired(now)) {
+        if (game.infinite) {
+          game.combo = 0;
+          game.lastGoldenCombo = 0;
+          game.hearts -= 1;
+          if (game.hearts <= 0) return "hearts";
+          this._skipExpiredTarget(game, now);
+        } else {
+          return "expired";
+        }
+      }
     }
 
     game.currentTarget.update();
+    if (game.goldenBonus?.isExpired(now)) game.goldenBonus = null;
 
     for (const ft of [...game.floatingTexts]) {
       ft.update();
@@ -434,6 +489,7 @@ const GameLogic = {
       ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
       ctx.fillText(`${level.name}  BPM ${level.bpm}`, 20, 82);
+      if (game.infinite) drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
       return;
     }
 
@@ -446,6 +502,7 @@ const GameLogic = {
       ctx.fillStyle = rgb(COLORS.gold);
       const bestText = `BEST: ${best}`;
       ctx.fillText(bestText, viewW() - ctx.measureText(bestText).width - 20, 55);
+      drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
     } else {
       ctx.fillStyle = rgb(game.timeLeft <= 10 ? COLORS.red : COLORS.text);
       const timeText = `TIME: ${game.timeLeft}s`;

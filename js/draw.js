@@ -334,3 +334,32 @@ function drawModalPanel(ctx, title, lines, btnRect, btnLabel, btnHovered) {
 
   drawNeonButton(ctx, btnRect, btnLabel, btnHovered, true);
 }
+
+function drawHearts(ctx, hearts, maxHearts) {
+  const size = Math.round((Input.touchMode ? 30 : 26) * accessibilityScale());
+  const gap = 10;
+  const totalW = maxHearts * size + (maxHearts - 1) * gap;
+  const baseX = (viewW() - totalW) / 2;
+  const y = viewH() - (Input.touchMode ? 52 : 40);
+
+  for (let i = 0; i < maxHearts; i++) {
+    const filled = i < hearts;
+    const x = baseX + i * (size + gap);
+    ctx.save();
+    ctx.translate(x + size / 2, y);
+    ctx.scale(size / 24, size / 24);
+    ctx.beginPath();
+    ctx.moveTo(0, 6);
+    ctx.bezierCurveTo(0, -2, -12, -2, -12, 6);
+    ctx.bezierCurveTo(-12, 14, 0, 20, 0, 24);
+    ctx.bezierCurveTo(0, 20, 12, 14, 12, 6);
+    ctx.bezierCurveTo(12, -2, 0, -2, 0, 6);
+    ctx.closePath();
+    ctx.fillStyle = filled ? rgb(COLORS.red) : "rgba(60,40,50,0.9)";
+    ctx.fill();
+    ctx.strokeStyle = filled ? rgb([255, 120, 140]) : rgb(COLORS.gray);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+}

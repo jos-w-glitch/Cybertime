@@ -559,6 +559,7 @@ const Screens = {
     game.nextTarget.draw(App.ctx, now);
     if (game.purplePartner?.isActive) game.purplePartner.draw(App.ctx, now);
     game.currentTarget.draw(App.ctx, now);
+    game.goldenBonus?.draw(App.ctx, now);
     game.flippedTargets.forEach((pt) => pt.draw(App.ctx));
     game.floatingTexts.forEach((ft) => ft.draw(App.ctx));
     GameLogic.drawHud(App.ctx, game, game.level, save);
@@ -589,8 +590,9 @@ const Screens = {
       ? [
           `SCORE: ${game.score}`,
           r.newBest ? "NEW BEST!" : `BEST: ${r.best || 0}`,
+          game.endReason === "hearts" ? "Ran out of hearts" : null,
           `+${r.xpGain || 0} XP   +${r.coinGain || 0} COINS`,
-        ]
+        ].filter(Boolean)
       : success
         ? [
             `SCORE: ${game.score} / ${r.passScore}`,

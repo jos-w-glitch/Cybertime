@@ -84,6 +84,10 @@ const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
 const PURPLE_DUAL_WINDOW_MS = 1000;
+const INFINITE_START_HEARTS = 5;
+const GOLDEN_BONUS_COMBO_STEP = 20;
+const GOLDEN_BONUS_POINTS = 25;
+const GOLDEN_BONUS_WINDOW_MS = 2800;
 
 const COLORS = {
   bg: [10, 10, 18],
@@ -1494,6 +1498,35 @@ function drawModalPanel(ctx, title, lines, btnRect, btnLabel, btnHovered) {
 
   drawNeonButton(ctx, btnRect, btnLabel, btnHovered, true);
 }
+
+function drawHearts(ctx, hearts, maxHearts) {
+  const size = Math.round((Input.touchMode ? 30 : 26) * accessibilityScale());
+  const gap = 10;
+  const totalW = maxHearts * size + (maxHearts - 1) * gap;
+  const baseX = (viewW() - totalW) / 2;
+  const y = viewH() - (Input.touchMode ? 52 : 40);
+
+  for (let i = 0; i < maxHearts; i++) {
+    const filled = i < hearts;
+    const x = baseX + i * (size + gap);
+    ctx.save();
+    ctx.translate(x + size / 2, y);
+    ctx.scale(size / 24, size / 24);
+    ctx.beginPath();
+    ctx.moveTo(0, 6);
+    ctx.bezierCurveTo(0, -2, -12, -2, -12, 6);
+    ctx.bezierCurveTo(-12, 14, 0, 20, 0, 24);
+    ctx.bezierCurveTo(0, 20, 12, 14, 12, 6);
+    ctx.bezierCurveTo(12, -2, 0, -2, 0, 6);
+    ctx.closePath();
+    ctx.fillStyle = filled ? rgb(COLORS.red) : "rgba(60,40,50,0.9)";
+    ctx.fill();
+    ctx.strokeStyle = filled ? rgb([255, 120, 140]) : rgb(COLORS.gray);
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.restore();
+  }
+}
 class FloatingText {
   constructor(text, x, y, color, value) {
     this.text = text;
@@ -1557,6 +1590,73 @@ class FlippedTarget {
     ctx.beginPath();
     ctx.arc(this.x, this.y, this.radius - 2, 0, Math.PI * 2);
     ctx.fill();
+  }
+}
+
+class GoldenBonus {
+  constructor(game) {
+    this.radius = Math.round((20 + Math.floor(Math.random() * 8)) * targetRadiusScale());
+    this.pulseAngle = Math.random() * 360;
+    this.expiresAt = 0;
+    this._place(game);
+  }
+
+  _place(game) {
+    const avoid = [game.currentTarget, game.nextTarget, game.purplePartner].filter(Boolean);
+    for (let attempt = 0; attempt < 28; attempt++) {
+      this.x = 80 + Math.random() * (viewW() - 160);
+      this.y = 120 + Math.random() * (viewH() - 240);
+      const clear = avoid.every((t) => Math.hypot(t.x - this.x, t.y - this.y) > (t.radius || 30) + this.radius + 56);
+      if (clear) return;
+    }
+  }
+
+  activate(now) {
+    this.expiresAt = now + GOLDEN_BONUS_WINDOW_MS;
+  }
+
+  isExpired(now) {
+    return now >= this.expiresAt;
+  }
+
+  checkClick(pos) {
+    return Math.hypot(this.x - pos.x, this.y - pos.y) <= this.radius + hitPadSize();
+  }
+
+  draw(ctx, now) {
+    this.pulseAngle += 0.14;
+    const pulse = Math.sin(this.pulseAngle) * 4;
+    const radius = this.radius + pulse;
+    const life = Math.max(0, (this.expiresAt - now) / GOLDEN_BONUS_WINDOW_MS);
+
+    ctx.strokeStyle = rgb(COLORS.gold, 0.35);
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 14, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = rgb(COLORS.gold);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = rgb(COLORS.gold);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = rgb(life < 0.3 ? COLORS.red : COLORS.text);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life);
+    ctx.stroke();
+
+    ctx.font = gameFont(18);
+    ctx.fillStyle = rgb([30, 24, 0]);
+    ctx.textAlign = "center";
+    ctx.fillText("BONUS", this.x, this.y + 6);
+    ctx.textAlign = "left";
   }
 }
 
@@ -1940,6 +2040,9 @@ function createGame(level, now) {
     purplePartner: null,
     purpleTapMain: 0,
     purpleTapPartner: 0,
+    goldenBonus: null,
+    lastGoldenCombo: 0,
+    hearts: level.infinite ? INFINITE_START_HEARTS : 0,
   };
   return game;
 }
@@ -2191,6 +2294,22 @@ const GameLogic = {
     }
   },
 
+  _bumpCombo(game, now) {
+    game.combo += 1;
+    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._onComboMilestone(game, now);
+  },
+
+  _onComboMilestone(game, now) {
+    if (!game.infinite || game.goldenBonus) return;
+    if (game.combo < GOLDEN_BONUS_COMBO_STEP || game.combo % GOLDEN_BONUS_COMBO_STEP !== 0) return;
+    if (game.lastGoldenCombo === game.combo) return;
+    game.lastGoldenCombo = game.combo;
+    const bonus = new GoldenBonus(game);
+    bonus.activate(now);
+    game.goldenBonus = bonus;
+  },
+
   handleStartClick(game, button, pos, now) {
     const start = game.startTarget;
     if (!start) return null;
@@ -2281,6 +2400,8 @@ const GameLogic = {
     const action = Input.resolveButton(button);
     if (!action) return;
 
+    if (this._tryCollectGoldenBonus(game, action, pos, now)) return;
+
     if (game.currentTarget.type === "PURPLE") {
       if (Input.touchMode) this._handlePurplePair(game, button, pos, now);
       else this._handleDesktopPurple(game, button, pos, now);
@@ -2288,7 +2409,7 @@ const GameLogic = {
     }
 
     const result = game.currentTarget.checkClick(pos);
-    if (result === "MISS") {
+    if (result === "MISS" || (game.infinite && result === "SAFE_ZONE")) {
       this._registerMiss(game, pos);
       return;
     }
@@ -2346,8 +2467,7 @@ const GameLogic = {
     }
 
     this._resetPurplePair(game);
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2369,8 +2489,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2421,8 +2540,7 @@ const GameLogic = {
     }
 
     target.mobileTapCount = 0;
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2453,8 +2571,7 @@ const GameLogic = {
     }
 
     target.mobileTapCount = 0;
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2481,8 +2598,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2499,8 +2615,7 @@ const GameLogic = {
       return;
     }
 
-    game.combo += 1;
-    game.comboPeak = Math.max(game.comboPeak, game.combo);
+    this._bumpCombo(game, now);
     const points = game.combo;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
@@ -2513,6 +2628,7 @@ const GameLogic = {
     if (target.defused) target.defused = false;
     this._resetPurplePair(game);
     game.combo = 0;
+    game.lastGoldenCombo = 0;
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -2528,8 +2644,29 @@ const GameLogic = {
 
   _registerMiss(game, pos) {
     game.combo = 0;
-    game.floatingTexts.push(new FloatingText("-1", pos.x, pos.y, COLORS.red, -1));
+    game.lastGoldenCombo = 0;
+    game.floatingTexts.push(new FloatingText(game.infinite ? "MISS" : "-1", pos.x, pos.y, COLORS.red, 0));
     AudioEngine.playMiss();
+    if (game.infinite) game.hearts -= 1;
+  },
+
+  _skipExpiredTarget(game, now) {
+    this._resetPurplePair(game);
+    game.currentTarget = game.nextTarget;
+    game.currentTarget.activate(now);
+    this._syncPurplePair(game, now);
+    game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
+  },
+
+  _tryCollectGoldenBonus(game, action, pos, now) {
+    const bonus = game.goldenBonus;
+    if (!bonus || bonus.isExpired(now) || !bonus.checkClick(pos)) return false;
+    if (action !== "ball") return false;
+    game.goldenBonus = null;
+    const points = GOLDEN_BONUS_POINTS + Math.min(game.combo, 8);
+    game.floatingTexts.push(new FloatingText(`+${points}`, bonus.x, bonus.y, COLORS.gold, points));
+    AudioEngine.playHit();
+    return true;
   },
 
   update(game, now) {
@@ -2550,12 +2687,33 @@ const GameLogic = {
       }
       if (msLeft <= 0) return "time";
     }
-    if (game.currentTarget.isOffScreen) return "expired";
+    if (game.infinite && game.hearts <= 0) return "hearts";
+
+    if (game.currentTarget.isOffScreen) {
+      if (game.infinite) {
+        game.hearts -= 1;
+        if (game.hearts <= 0) return "hearts";
+        this._skipExpiredTarget(game, now);
+      } else {
+        return "expired";
+      }
+    }
     if (!game.graceUntil || now > game.graceUntil) {
-      if (game.currentTarget.isExpired(now)) return "expired";
+      if (game.currentTarget.isExpired(now)) {
+        if (game.infinite) {
+          game.combo = 0;
+          game.lastGoldenCombo = 0;
+          game.hearts -= 1;
+          if (game.hearts <= 0) return "hearts";
+          this._skipExpiredTarget(game, now);
+        } else {
+          return "expired";
+        }
+      }
     }
 
     game.currentTarget.update();
+    if (game.goldenBonus?.isExpired(now)) game.goldenBonus = null;
 
     for (const ft of [...game.floatingTexts]) {
       ft.update();
@@ -2598,6 +2756,7 @@ const GameLogic = {
       ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
       ctx.fillText(`${level.name}  BPM ${level.bpm}`, 20, 82);
+      if (game.infinite) drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
       return;
     }
 
@@ -2610,6 +2769,7 @@ const GameLogic = {
       ctx.fillStyle = rgb(COLORS.gold);
       const bestText = `BEST: ${best}`;
       ctx.fillText(bestText, viewW() - ctx.measureText(bestText).width - 20, 55);
+      drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
     } else {
       ctx.fillStyle = rgb(game.timeLeft <= 10 ? COLORS.red : COLORS.text);
       const timeText = `TIME: ${game.timeLeft}s`;
@@ -3362,6 +3522,7 @@ const Screens = {
     game.nextTarget.draw(App.ctx, now);
     if (game.purplePartner?.isActive) game.purplePartner.draw(App.ctx, now);
     game.currentTarget.draw(App.ctx, now);
+    game.goldenBonus?.draw(App.ctx, now);
     game.flippedTargets.forEach((pt) => pt.draw(App.ctx));
     game.floatingTexts.forEach((ft) => ft.draw(App.ctx));
     GameLogic.drawHud(App.ctx, game, game.level, save);
@@ -3392,8 +3553,9 @@ const Screens = {
       ? [
           `SCORE: ${game.score}`,
           r.newBest ? "NEW BEST!" : `BEST: ${r.best || 0}`,
+          game.endReason === "hearts" ? "Ran out of hearts" : null,
           `+${r.xpGain || 0} XP   +${r.coinGain || 0} COINS`,
-        ]
+        ].filter(Boolean)
       : success
         ? [
             `SCORE: ${game.score} / ${r.passScore}`,
@@ -3909,7 +4071,7 @@ const App = {
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
     this.game.endReason = reason;
-    this.game.failMessage = pickFailMessage();
+    this.game.failMessage = reason === "hearts" ? "OUT OF HEARTS" : pickFailMessage();
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);

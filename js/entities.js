@@ -64,6 +64,73 @@ class FlippedTarget {
   }
 }
 
+class GoldenBonus {
+  constructor(game) {
+    this.radius = Math.round((20 + Math.floor(Math.random() * 8)) * targetRadiusScale());
+    this.pulseAngle = Math.random() * 360;
+    this.expiresAt = 0;
+    this._place(game);
+  }
+
+  _place(game) {
+    const avoid = [game.currentTarget, game.nextTarget, game.purplePartner].filter(Boolean);
+    for (let attempt = 0; attempt < 28; attempt++) {
+      this.x = 80 + Math.random() * (viewW() - 160);
+      this.y = 120 + Math.random() * (viewH() - 240);
+      const clear = avoid.every((t) => Math.hypot(t.x - this.x, t.y - this.y) > (t.radius || 30) + this.radius + 56);
+      if (clear) return;
+    }
+  }
+
+  activate(now) {
+    this.expiresAt = now + GOLDEN_BONUS_WINDOW_MS;
+  }
+
+  isExpired(now) {
+    return now >= this.expiresAt;
+  }
+
+  checkClick(pos) {
+    return Math.hypot(this.x - pos.x, this.y - pos.y) <= this.radius + hitPadSize();
+  }
+
+  draw(ctx, now) {
+    this.pulseAngle += 0.14;
+    const pulse = Math.sin(this.pulseAngle) * 4;
+    const radius = this.radius + pulse;
+    const life = Math.max(0, (this.expiresAt - now) / GOLDEN_BONUS_WINDOW_MS);
+
+    ctx.strokeStyle = rgb(COLORS.gold, 0.35);
+    ctx.lineWidth = 10;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 14, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.strokeStyle = rgb(COLORS.gold);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 8, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = rgb(COLORS.gold);
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = rgb(life < 0.3 ? COLORS.red : COLORS.text);
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, radius + 12, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * life);
+    ctx.stroke();
+
+    ctx.font = gameFont(18);
+    ctx.fillStyle = rgb([30, 24, 0]);
+    ctx.textAlign = "center";
+    ctx.fillText("BONUS", this.x, this.y + 6);
+    ctx.textAlign = "left";
+  }
+}
+
 class Target {
   constructor(level, isSlider = false) {
     this.type = this._pickType(level, isSlider);
@@ -444,6 +511,9 @@ function createGame(level, now) {
     purplePartner: null,
     purpleTapMain: 0,
     purpleTapPartner: 0,
+    goldenBonus: null,
+    lastGoldenCombo: 0,
+    hearts: level.infinite ? INFINITE_START_HEARTS : 0,
   };
   return game;
 }

@@ -295,7 +295,7 @@ const App = {
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
     this.game.endReason = reason;
-    this.game.failMessage = pickFailMessage();
+    this.game.failMessage = reason === "hearts" ? "OUT OF HEARTS" : pickFailMessage();
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
