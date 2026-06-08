@@ -35,7 +35,6 @@ cat "$ROOT/js/config.js" \
 
 cp "$ROOT/assets/logo.png" "$GAME/assets/"
 cp "$ROOT/assets/1.png" "$GAME/assets/"
-cp "$ROOT/assets/share-template.png" "$GAME/assets/"
 cp "$ROOT/assets/fonts/"*.ttf "$GAME/assets/fonts/"
 if command -v sips >/dev/null 2>&1; then
   sips -z 192 192 "$ROOT/assets/logo.png" --out "$GAME/assets/icon-192.png" >/dev/null

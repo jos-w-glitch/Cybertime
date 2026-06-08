@@ -1,10 +1,11 @@
-const SHARE_TEMPLATE_PATH = "assets/share-template.png";
+const SHARE_BG = "#FCEE0A";
+const SHARE_WIDTH = 1080;
+const SHARE_HEIGHT = 840;
 
 const Share = {
   _imageBlob: null,
   _preparePromise: null,
   _status: "idle",
-  _templateImage: null,
 
   reset() {
     this._imageBlob = null;
@@ -31,20 +32,6 @@ const Share = {
     return `STAGE ${level.id} — ${level.name}`;
   },
 
-  async loadTemplate() {
-    if (this._templateImage) return this._templateImage;
-    await loadGameFont();
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = () => reject(new Error("Share template failed to load"));
-      img.src = SHARE_TEMPLATE_PATH;
-    });
-    this._templateImage = img;
-    return img;
-  },
-
   drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
     const words = text.split(" ");
     let line = "";
@@ -64,35 +51,32 @@ const Share = {
   },
 
   async renderShareImage(game) {
-    const img = await this.loadTemplate();
-    const scale = 3;
-    const w = img.width * scale;
-    const h = img.height * scale;
+    await loadGameFont();
+    const w = SHARE_WIDTH;
+    const h = SHARE_HEIGHT;
     const canvas = document.createElement("canvas");
     canvas.width = w;
     canvas.height = h;
     const ctx = canvas.getContext("2d");
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = "high";
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.fillStyle = SHARE_BG;
+    ctx.fillRect(0, 0, w, h);
 
-    const textX = w * 0.52;
-    const maxW = w * 0.42;
-    ctx.textAlign = "left";
+    const cx = w / 2;
+    ctx.textAlign = "center";
     ctx.fillStyle = "#111";
-    ctx.shadowColor = "rgba(255, 220, 0, 0.35)";
-    ctx.shadowBlur = 4 * scale;
 
-    ctx.font = `bold ${Math.round(26 * scale)}px '${GAME_FONT}', sans-serif`;
-    ctx.fillText("SCORE", textX, h * 0.30);
+    ctx.font = `bold 52px '${GAME_FONT}', sans-serif`;
+    ctx.fillText("CYBERTIME", cx, h * 0.22);
 
-    ctx.font = `bold ${Math.round(56 * scale)}px '${GAME_FONT}', sans-serif`;
-    ctx.fillText(String(game.score), textX, h * 0.50);
+    ctx.font = `bold 44px '${GAME_FONT}', sans-serif`;
+    ctx.fillText("SCORE", cx, h * 0.38);
 
-    ctx.font = `bold ${Math.round(17 * scale)}px '${GAME_FONT}', sans-serif`;
-    this.drawWrappedText(ctx, this.stageLabel(game.level), textX, h * 0.64, maxW, Math.round(22 * scale));
+    ctx.font = `bold 120px '${GAME_FONT}', sans-serif`;
+    ctx.fillText(String(game.score), cx, h * 0.56);
 
-    ctx.shadowBlur = 0;
+    ctx.font = `bold 36px '${GAME_FONT}', sans-serif`;
+    this.drawWrappedText(ctx, this.stageLabel(game.level), cx, h * 0.70, w * 0.85, 44);
+
     return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
   },
 
