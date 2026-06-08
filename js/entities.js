@@ -445,6 +445,5 @@ function createGame(level, now) {
     purpleTapMain: 0,
     purpleTapPartner: 0,
   };
-  Replay.attach(game);
   return game;
 }

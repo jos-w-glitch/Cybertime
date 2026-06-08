@@ -1940,7 +1940,6 @@ function createGame(level, now) {
     purpleTapMain: 0,
     purpleTapPartner: 0,
   };
-  Replay.attach(game);
   return game;
 }
 const AudioEngine = {
@@ -2170,8 +2169,6 @@ const GameLogic = {
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
-    Replay.markStart(game, now);
-    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     if (!game.infinite) {
       game.timeLimit = STAGE_TIME_SECONDS;
       game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
@@ -2515,7 +2512,6 @@ const GameLogic = {
     if (target.defused) target.defused = false;
     this._resetPurplePair(game);
     game.combo = 0;
-    Replay.logMiss(game, target.x, target.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -2523,17 +2519,14 @@ const GameLogic = {
   _advanceTarget(game, target, color, now, points = game.combo) {
     this._resetPurplePair(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
-    Replay.logHit(game, target, points, game.combo, now);
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
-    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
   },
 
   _registerMiss(game, pos) {
     game.combo = 0;
-    Replay.logMiss(game, pos.x, pos.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", pos.x, pos.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -2584,7 +2577,6 @@ const GameLogic = {
     game.running = false;
     AudioEngine.stopMusic();
     game.lastRewards = finishGameRewards(save, game);
-    Replay.finalize(game, game.lastRewards?.success);
     if (game.level.infinite) {
       updateInfiniteHighScore(save, musicLevelId(game.level), game.score);
     } else {
@@ -2647,173 +2639,116 @@ const GameLogic = {
     ctx.fillText(hint, (viewW() - ctx.measureText(hint).width) / 2, viewH() - 40);
   },
 };
-const REPLAY_VERSION = 1;
-const REPLAY_CLIP_MS = 12000;
-const REPLAY_OUTRO_MS = 2500;
+const SHARE_TEMPLATE_PATH = "assets/share-template.png";
 
-const Replay = {
-  attach(game) {
-    game.replay = {
-      version: REPLAY_VERSION,
-      w: viewW(),
-      h: viewH(),
-      startedAt: 0,
-      events: [],
-    };
-  },
-
-  markStart(game, now) {
-    if (!game?.replay) return;
-    game.replay.startedAt = now;
-    game.replay.w = viewW();
-    game.replay.h = viewH();
-  },
-
-  time(game, now) {
-    if (!game?.replay?.startedAt) return 0;
-    return Math.max(0, now - game.replay.startedAt);
-  },
-
-  logSpawn(game, target, now, partner = null) {
-    if (!game?.replay?.startedAt) return;
-    const event = {
-      t: this.time(game, now),
-      type: "spawn",
-      targetType: target.type,
-      x: Math.round(target.x),
-      y: Math.round(target.y),
-      r: Math.round(target.radius),
-      slider: !!target.isSlider,
-      velX: target.isSlider ? target.velX : 0,
-      hitZoneX: Math.round(target.hitZoneX),
-    };
-    if (partner) {
-      event.partner = {
-        x: Math.round(partner.x),
-        y: Math.round(partner.y),
-        r: Math.round(partner.radius),
-      };
-    }
-    game.replay.events.push(event);
-  },
-
-  logHit(game, target, points, combo, now) {
-    if (!game?.replay?.startedAt) return;
-    game.replay.events.push({
-      t: this.time(game, now),
-      type: "hit",
-      x: Math.round(target.x),
-      y: Math.round(target.y),
-      targetType: target.type,
-      points,
-      combo,
-    });
-  },
-
-  logMiss(game, x, y, now) {
-    if (!game?.replay?.startedAt) return;
-    game.replay.events.push({
-      t: this.time(game, now),
-      type: "miss",
-      x: Math.round(x),
-      y: Math.round(y),
-    });
-  },
-
-  finalize(game, success) {
-    const replay = game?.replay;
-    if (!replay) return null;
-
-    replay.score = game.score;
-    replay.success = !!success;
-    replay.levelId = game.level.id;
-    replay.levelName = game.level.name;
-    replay.infinite = !!game.infinite;
-    replay.comboPeak = game.comboPeak;
-
-    const lastT = replay.events.length ? replay.events[replay.events.length - 1].t : 0;
-    replay.clipStartMs = Math.max(0, lastT - REPLAY_CLIP_MS);
-    replay.clipDurationMs = lastT - replay.clipStartMs + REPLAY_OUTRO_MS;
-    replay.durationMs = replay.clipDurationMs;
-    return replay;
-  },
-
-  forShare(game) {
-    return game?.replay || null;
-  },
-};
 const Share = {
-  _renderer: null,
-  _videoBlob: null,
+  _imageBlob: null,
   _preparePromise: null,
   _status: "idle",
-  _failReason: null,
-  _renderTarget: null,
+  _templateImage: null,
 
   reset() {
-    this._videoBlob = null;
+    this._imageBlob = null;
     this._preparePromise = null;
     this._status = "idle";
-    this._failReason = null;
-    this._renderTarget = null;
   },
 
   buildMessage(score, level) {
     if (level?.infinite) {
-      return `I got ${score} points in CyberTime Infinite! Can you beat me?`;
+      return `I scored ${score} in CyberTime Infinite!`;
     }
-    return `I got ${score} points in CyberTime! Can you beat me?`;
+    return `I scored ${score} on Stage ${level.id} in CyberTime!`;
   },
 
   shareLabel() {
-    if (this._status === "preparing") return "PREPARING VIDEO...";
-    if (this._status === "ready") return "SHARE VIDEO";
-    if (this._status === "failed") return "VIDEO UNAVAILABLE";
-    return "SHARE VIDEO";
+    if (this._status === "preparing") return "PREPARING...";
+    if (this._status === "ready") return "SHARE";
+    if (this._status === "failed") return "SHARE UNAVAILABLE";
+    return "SHARE";
   },
 
-  async loadRenderer() {
-    if (this._renderer) return this._renderer;
-    this._renderer = await import("./replay/replay-render.js");
-    return this._renderer;
+  stageLabel(level) {
+    if (level?.infinite) return "INFINITE MODE";
+    return `STAGE ${level.id} — ${level.name}`;
   },
 
-  async renderReplayBlob(replay) {
-    const renderer = await this.loadRenderer();
-    const details = await renderer.getReplayRenderTarget();
-    if (!details?.canRender || !details?.target) {
-      this._renderTarget = null;
-      this._failReason = details?.issues?.[0] ? String(details.issues[0]) : "unsupported browser";
-      return null;
+  async loadTemplate() {
+    if (this._templateImage) return this._templateImage;
+    await loadGameFont();
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error("Share template failed to load"));
+      img.src = SHARE_TEMPLATE_PATH;
+    });
+    this._templateImage = img;
+    return img;
+  },
+
+  drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(" ");
+    let line = "";
+    let drawY = y;
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        ctx.fillText(line, x, drawY);
+        line = word;
+        drawY += lineHeight;
+      } else {
+        line = test;
+      }
     }
-    this._renderTarget = details.target;
-    return renderer.renderCyberTimeReplay(replay, details.target);
+    if (line) ctx.fillText(line, x, drawY);
+    return drawY;
   },
 
-  prepareReplay(game) {
+  async renderShareImage(game) {
+    const img = await this.loadTemplate();
+    const scale = 3;
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const textX = w * 0.52;
+    const maxW = w * 0.42;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#111";
+    ctx.shadowColor = "rgba(255, 220, 0, 0.35)";
+    ctx.shadowBlur = 4 * scale;
+
+    ctx.font = `bold ${Math.round(26 * scale)}px '${GAME_FONT}', sans-serif`;
+    ctx.fillText("SCORE", textX, h * 0.30);
+
+    ctx.font = `bold ${Math.round(56 * scale)}px '${GAME_FONT}', sans-serif`;
+    ctx.fillText(String(game.score), textX, h * 0.50);
+
+    ctx.font = `bold ${Math.round(17 * scale)}px '${GAME_FONT}', sans-serif`;
+    this.drawWrappedText(ctx, this.stageLabel(game.level), textX, h * 0.64, maxW, Math.round(22 * scale));
+
+    ctx.shadowBlur = 0;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
+  },
+
+  prepareShareCard(game) {
     this.reset();
-    const replay = Replay.forShare(game);
-    if (!replay?.events?.length) {
-      this._status = "failed";
-      return Promise.resolve(null);
-    }
-
     this._status = "preparing";
-    this._preparePromise = this.renderReplayBlob(replay)
+    this._preparePromise = this.renderShareImage(game)
       .then((blob) => {
-        this._videoBlob = blob;
+        this._imageBlob = blob;
         this._status = blob ? "ready" : "failed";
-        if (!blob && this._failReason) {
-          Screens.shareFeedback = `VIDEO UNAVAILABLE: ${this._failReason}`;
-        }
         return blob;
       })
       .catch((err) => {
-        console.warn("Replay prepare failed", err);
+        console.warn("Share image failed", err);
         this._status = "failed";
-        const msg = err?.message ? String(err.message) : "unknown error";
-        this._failReason = msg;
-        Screens.shareFeedback = `VIDEO UNAVAILABLE: ${msg}`;
         return null;
       });
     return this._preparePromise;
@@ -2828,12 +2763,12 @@ const Share = {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
-  async saveVideoBlob(blob) {
+  async saveImageBlob(blob) {
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: "cybertime-replay.mp4",
-          types: [{ accept: { "video/mp4": [".mp4"] } }],
+          suggestedName: "cybertime-score.png",
+          types: [{ accept: { "image/png": [".png"] } }],
         });
         const writable = await handle.createWritable();
         await writable.write(blob);
@@ -2843,22 +2778,17 @@ const Share = {
         if (err?.name === "AbortError") return null;
       }
     }
-
-    this.downloadBlob(blob, "cybertime-replay.mp4");
+    this.downloadBlob(blob, "cybertime-score.png");
     return "downloaded";
   },
 
-  async shareVideoFile(blob) {
-    const ext = this._renderTarget?.ext ?? "mp4";
-    const mime = this._renderTarget?.mime ?? "video/mp4";
-    const file = new File([blob], `cybertime-replay.${ext}`, { type: mime });
-
+  async shareImageFile(blob) {
+    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
     if (navigator.share) {
       const payloads = [
         { files: [file] },
-        { title: "CyberTime Replay", files: [file] },
+        { title: "CyberTime", files: [file] },
       ];
-
       for (const payload of payloads) {
         if (navigator.canShare && !navigator.canShare(payload)) continue;
         try {
@@ -2869,21 +2799,20 @@ const Share = {
         }
       }
     }
-
-    return this.saveVideoBlob(blob);
+    return this.saveImageBlob(blob);
   },
 
   async shareScore(game) {
     if (this._status === "failed") return "failed";
 
-    let blob = this._videoBlob;
+    let blob = this._imageBlob;
     if (!blob) {
-      Screens.shareFeedback = "Finishing video...";
-      blob = await (this._preparePromise || this.prepareReplay(game));
+      Screens.shareFeedback = "Creating image...";
+      blob = await (this._preparePromise || this.prepareShareCard(game));
     }
     if (!blob) return "failed";
 
-    const result = await this.shareVideoFile(blob);
+    const result = await this.shareImageFile(blob);
     return result || "failed";
   },
 };
@@ -3633,13 +3562,13 @@ const Screens = {
         if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {
           if (result === "downloaded") {
-            Screens.shareFeedback = "Video saved to downloads!";
+            Screens.shareFeedback = "Image saved!";
           } else if (result === "saved") {
-            Screens.shareFeedback = "Video saved!";
+            Screens.shareFeedback = "Image saved!";
           } else if (result === "shared") {
-            Screens.shareFeedback = "Video shared!";
+            Screens.shareFeedback = "Image shared!";
           } else if (result === "failed") {
-            Screens.shareFeedback = "Video not supported — try Chrome";
+            Screens.shareFeedback = "Could not share image";
           } else {
             Screens.shareFeedback = "";
             return;
@@ -3998,7 +3927,7 @@ const App = {
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
-    Share.prepareReplay(this.game);
+    Share.prepareShareCard(this.game);
     this.state = "gameover";
   },
 

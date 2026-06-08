@@ -744,13 +744,13 @@ const Screens = {
         if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {
           if (result === "downloaded") {
-            Screens.shareFeedback = "Video saved to downloads!";
+            Screens.shareFeedback = "Image saved!";
           } else if (result === "saved") {
-            Screens.shareFeedback = "Video saved!";
+            Screens.shareFeedback = "Image saved!";
           } else if (result === "shared") {
-            Screens.shareFeedback = "Video shared!";
+            Screens.shareFeedback = "Image shared!";
           } else if (result === "failed") {
-            Screens.shareFeedback = "Video not supported — try Chrome";
+            Screens.shareFeedback = "Could not share image";
           } else {
             Screens.shareFeedback = "";
             return;

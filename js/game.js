@@ -6,8 +6,6 @@ const GameLogic = {
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
-    Replay.markStart(game, now);
-    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     if (!game.infinite) {
       game.timeLimit = STAGE_TIME_SECONDS;
       game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
@@ -351,7 +349,6 @@ const GameLogic = {
     if (target.defused) target.defused = false;
     this._resetPurplePair(game);
     game.combo = 0;
-    Replay.logMiss(game, target.x, target.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -359,17 +356,14 @@ const GameLogic = {
   _advanceTarget(game, target, color, now, points = game.combo) {
     this._resetPurplePair(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
-    Replay.logHit(game, target, points, game.combo, now);
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
-    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
   },
 
   _registerMiss(game, pos) {
     game.combo = 0;
-    Replay.logMiss(game, pos.x, pos.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", pos.x, pos.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -420,7 +414,6 @@ const GameLogic = {
     game.running = false;
     AudioEngine.stopMusic();
     game.lastRewards = finishGameRewards(save, game);
-    Replay.finalize(game, game.lastRewards?.success);
     if (game.level.infinite) {
       updateInfiniteHighScore(save, musicLevelId(game.level), game.score);
     } else {

@@ -1,75 +1,113 @@
+const SHARE_TEMPLATE_PATH = "assets/share-template.png";
+
 const Share = {
-  _renderer: null,
-  _videoBlob: null,
+  _imageBlob: null,
   _preparePromise: null,
   _status: "idle",
-  _failReason: null,
-  _renderTarget: null,
+  _templateImage: null,
 
   reset() {
-    this._videoBlob = null;
+    this._imageBlob = null;
     this._preparePromise = null;
     this._status = "idle";
-    this._failReason = null;
-    this._renderTarget = null;
   },
 
   buildMessage(score, level) {
     if (level?.infinite) {
-      return `I got ${score} points in CyberTime Infinite! Can you beat me?`;
+      return `I scored ${score} in CyberTime Infinite!`;
     }
-    return `I got ${score} points in CyberTime! Can you beat me?`;
+    return `I scored ${score} on Stage ${level.id} in CyberTime!`;
   },
 
   shareLabel() {
-    if (this._status === "preparing") return "PREPARING VIDEO...";
-    if (this._status === "ready") return "SHARE VIDEO";
-    if (this._status === "failed") return "VIDEO UNAVAILABLE";
-    return "SHARE VIDEO";
+    if (this._status === "preparing") return "PREPARING...";
+    if (this._status === "ready") return "SHARE";
+    if (this._status === "failed") return "SHARE UNAVAILABLE";
+    return "SHARE";
   },
 
-  async loadRenderer() {
-    if (this._renderer) return this._renderer;
-    this._renderer = await import("./replay/replay-render.js");
-    return this._renderer;
+  stageLabel(level) {
+    if (level?.infinite) return "INFINITE MODE";
+    return `STAGE ${level.id} — ${level.name}`;
   },
 
-  async renderReplayBlob(replay) {
-    const renderer = await this.loadRenderer();
-    const details = await renderer.getReplayRenderTarget();
-    if (!details?.canRender || !details?.target) {
-      this._renderTarget = null;
-      this._failReason = details?.issues?.[0] ? String(details.issues[0]) : "unsupported browser";
-      return null;
+  async loadTemplate() {
+    if (this._templateImage) return this._templateImage;
+    await loadGameFont();
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = () => reject(new Error("Share template failed to load"));
+      img.src = SHARE_TEMPLATE_PATH;
+    });
+    this._templateImage = img;
+    return img;
+  },
+
+  drawWrappedText(ctx, text, x, y, maxWidth, lineHeight) {
+    const words = text.split(" ");
+    let line = "";
+    let drawY = y;
+    for (const word of words) {
+      const test = line ? `${line} ${word}` : word;
+      if (ctx.measureText(test).width > maxWidth && line) {
+        ctx.fillText(line, x, drawY);
+        line = word;
+        drawY += lineHeight;
+      } else {
+        line = test;
+      }
     }
-    this._renderTarget = details.target;
-    return renderer.renderCyberTimeReplay(replay, details.target);
+    if (line) ctx.fillText(line, x, drawY);
+    return drawY;
   },
 
-  prepareReplay(game) {
+  async renderShareImage(game) {
+    const img = await this.loadTemplate();
+    const scale = 3;
+    const w = img.width * scale;
+    const h = img.height * scale;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = "high";
+    ctx.drawImage(img, 0, 0, w, h);
+
+    const textX = w * 0.52;
+    const maxW = w * 0.42;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#111";
+    ctx.shadowColor = "rgba(255, 220, 0, 0.35)";
+    ctx.shadowBlur = 4 * scale;
+
+    ctx.font = `bold ${Math.round(26 * scale)}px '${GAME_FONT}', sans-serif`;
+    ctx.fillText("SCORE", textX, h * 0.30);
+
+    ctx.font = `bold ${Math.round(56 * scale)}px '${GAME_FONT}', sans-serif`;
+    ctx.fillText(String(game.score), textX, h * 0.50);
+
+    ctx.font = `bold ${Math.round(17 * scale)}px '${GAME_FONT}', sans-serif`;
+    this.drawWrappedText(ctx, this.stageLabel(game.level), textX, h * 0.64, maxW, Math.round(22 * scale));
+
+    ctx.shadowBlur = 0;
+    return new Promise((resolve) => canvas.toBlob(resolve, "image/png", 0.92));
+  },
+
+  prepareShareCard(game) {
     this.reset();
-    const replay = Replay.forShare(game);
-    if (!replay?.events?.length) {
-      this._status = "failed";
-      return Promise.resolve(null);
-    }
-
     this._status = "preparing";
-    this._preparePromise = this.renderReplayBlob(replay)
+    this._preparePromise = this.renderShareImage(game)
       .then((blob) => {
-        this._videoBlob = blob;
+        this._imageBlob = blob;
         this._status = blob ? "ready" : "failed";
-        if (!blob && this._failReason) {
-          Screens.shareFeedback = `VIDEO UNAVAILABLE: ${this._failReason}`;
-        }
         return blob;
       })
       .catch((err) => {
-        console.warn("Replay prepare failed", err);
+        console.warn("Share image failed", err);
         this._status = "failed";
-        const msg = err?.message ? String(err.message) : "unknown error";
-        this._failReason = msg;
-        Screens.shareFeedback = `VIDEO UNAVAILABLE: ${msg}`;
         return null;
       });
     return this._preparePromise;
@@ -84,12 +122,12 @@ const Share = {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
-  async saveVideoBlob(blob) {
+  async saveImageBlob(blob) {
     if (window.showSaveFilePicker) {
       try {
         const handle = await window.showSaveFilePicker({
-          suggestedName: "cybertime-replay.mp4",
-          types: [{ accept: { "video/mp4": [".mp4"] } }],
+          suggestedName: "cybertime-score.png",
+          types: [{ accept: { "image/png": [".png"] } }],
         });
         const writable = await handle.createWritable();
         await writable.write(blob);
@@ -99,22 +137,17 @@ const Share = {
         if (err?.name === "AbortError") return null;
       }
     }
-
-    this.downloadBlob(blob, "cybertime-replay.mp4");
+    this.downloadBlob(blob, "cybertime-score.png");
     return "downloaded";
   },
 
-  async shareVideoFile(blob) {
-    const ext = this._renderTarget?.ext ?? "mp4";
-    const mime = this._renderTarget?.mime ?? "video/mp4";
-    const file = new File([blob], `cybertime-replay.${ext}`, { type: mime });
-
+  async shareImageFile(blob) {
+    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
     if (navigator.share) {
       const payloads = [
         { files: [file] },
-        { title: "CyberTime Replay", files: [file] },
+        { title: "CyberTime", files: [file] },
       ];
-
       for (const payload of payloads) {
         if (navigator.canShare && !navigator.canShare(payload)) continue;
         try {
@@ -125,21 +158,20 @@ const Share = {
         }
       }
     }
-
-    return this.saveVideoBlob(blob);
+    return this.saveImageBlob(blob);
   },
 
   async shareScore(game) {
     if (this._status === "failed") return "failed";
 
-    let blob = this._videoBlob;
+    let blob = this._imageBlob;
     if (!blob) {
-      Screens.shareFeedback = "Finishing video...";
-      blob = await (this._preparePromise || this.prepareReplay(game));
+      Screens.shareFeedback = "Creating image...";
+      blob = await (this._preparePromise || this.prepareShareCard(game));
     }
     if (!blob) return "failed";
 
-    const result = await this.shareVideoFile(blob);
+    const result = await this.shareImageFile(blob);
     return result || "failed";
   },
 };

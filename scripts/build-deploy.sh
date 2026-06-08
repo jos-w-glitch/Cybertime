@@ -29,20 +29,13 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/entities.js" \
     "$ROOT/js/audio.js" \
     "$ROOT/js/game.js" \
-    "$ROOT/js/replay.js" \
     "$ROOT/js/share.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 
-if [ -f "$ROOT/remotion/package.json" ]; then
-  echo "Building Remotion replay renderer..."
-  (cd "$ROOT/remotion" && npm install && npm run build)
-  mkdir -p "$GAME/replay"
-  cp "$ROOT/remotion/dist/replay-render.js" "$GAME/replay/replay-render.js"
-fi
-
 cp "$ROOT/assets/logo.png" "$GAME/assets/"
 cp "$ROOT/assets/1.png" "$GAME/assets/"
+cp "$ROOT/assets/share-template.png" "$GAME/assets/"
 cp "$ROOT/assets/fonts/"*.ttf "$GAME/assets/fonts/"
 if command -v sips >/dev/null 2>&1; then
   sips -z 192 192 "$ROOT/assets/logo.png" --out "$GAME/assets/icon-192.png" >/dev/null

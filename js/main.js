@@ -298,7 +298,7 @@ const App = {
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
-    Share.prepareReplay(this.game);
+    Share.prepareShareCard(this.game);
     this.state = "gameover";
   },
 
