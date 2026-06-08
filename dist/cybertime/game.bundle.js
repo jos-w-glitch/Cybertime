@@ -2811,7 +2811,9 @@ const Share = {
       .catch((err) => {
         console.warn("Replay prepare failed", err);
         this._status = "failed";
-        Screens.shareFeedback = "VIDEO UNAVAILABLE";
+        const msg = err?.message ? String(err.message) : "unknown error";
+        this._failReason = msg;
+        Screens.shareFeedback = `VIDEO UNAVAILABLE: ${msg}`;
         return null;
       });
     return this._preparePromise;
