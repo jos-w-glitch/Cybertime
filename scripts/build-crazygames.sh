@@ -27,7 +27,8 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/crazygames-ui.js" \
     "$ROOT/js/promo.js" \
     "$ROOT/js/ui.js" \
-    "$ROOT/js/main.js" > "$OUT/game.bundle.js"
+    "$ROOT/js/main.js" \
+    "$ROOT/js/crazygames-bridge.js" > "$OUT/game.bundle.js"
 
 cp "$ROOT/assets/logo.png" "$OUT/assets/"
 cp "$ROOT/assets/1.png" "$OUT/assets/"

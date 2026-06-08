@@ -53,7 +53,7 @@ const CrazyGamesUi = {
   draw(save, mousePos, now) {
     Screens.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars);
     this.updateScroll();
 
     App.ctx.font = gameFont(Input.touchMode ? 36 : 44);

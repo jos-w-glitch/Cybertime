@@ -32,7 +32,6 @@ const App = {
     this.bindNameForm();
 
     Auth.init(() => this.startSession());
-    CrazyGamesSdk.init();
 
     document.getElementById("wrapper")?.classList.add("session-active");
 
@@ -115,14 +114,10 @@ const App = {
       AudioEngine.setVolumes(this.save.settings);
       Auth.hideNameScreen();
       this.sessionReady = true;
-      CrazyGamesSdk.loadingStop();
       if (this.state !== "game" || !this.game?.running) {
         this.state = this.state === "settings" ? "settings" : "menu";
       }
-      if (this.state === "menu") {
-        CrazyGamesHooks.onMenu();
-        AudioEngine.startMenuMusic();
-      }
+      if (this.state === "menu") AudioEngine.startMenuMusic();
       if (Input.touchMode) MobileShell.syncRotatePrompt();
     } catch (err) {
       console.error(err);
@@ -236,10 +231,6 @@ const App = {
         Screens.scrollList(e.deltaY * 0.6);
         e.preventDefault();
       }
-      if (App.state === "cg-sdk") {
-        CrazyGamesUi.scrollY = Math.max(0, Math.min(CrazyGamesUi.maxScroll, CrazyGamesUi.scrollY + e.deltaY * 0.6));
-        e.preventDefault();
-      }
     }, { passive: false });
   },
 
@@ -249,7 +240,6 @@ const App = {
   },
 
   goHome() {
-    CrazyGamesSdk.gameplayStop();
     MobileShell.exitPlayMode();
     this.game = null;
     this.pendingLevel = null;
@@ -258,7 +248,6 @@ const App = {
     Screens.shareFeedback = "";
     Share.reset();
     this.state = "menu";
-    CrazyGamesHooks.onMenu();
     AudioEngine.startMenuMusic();
   },
 
@@ -290,8 +279,6 @@ const App = {
   },
 
   async launchGame(level) {
-    CrazyGamesSdk.gameplayStop();
-    CrazyGamesHooks.onEnterGame();
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
@@ -303,7 +290,6 @@ const App = {
   beginGame(now) {
     if (!this.game || this.game.started) return;
     GameLogic.beginGame(this.game, now);
-    CrazyGamesSdk.gameplayStart();
   },
 
   startNextLevel() {
@@ -314,15 +300,12 @@ const App = {
 
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
-    CrazyGamesSdk.gameplayStop();
     this.game.endReason = reason;
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
-    if (this.game.lastRewards?.success) CrazyGamesSdk.happytime();
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     SitePromo.onGameOver();
-    CrazyGamesHooks.onGameOver(this.game, this.save);
     this.state = "gameover";
   },
 
@@ -375,9 +358,6 @@ const App = {
         this.renderCursor(this.save);
       } else if (this.state === "settings") {
         Screens.drawSettings(this.save, mousePos, now);
-        this.renderCursor(this.save);
-      } else if (this.state === "cg-sdk") {
-        CrazyGamesUi.draw(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "howto") {
         Screens.drawHowTo(mousePos, now, this.save);

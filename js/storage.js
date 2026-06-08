@@ -159,9 +159,6 @@ function applyCloudSave(name, raw, pin) {
 }
 
 function writeSave(data) {
-  if (typeof CrazyGamesSdk !== "undefined" && CrazyGamesSdk.enabled()) {
-    CrazyGamesSdk.syncSave(data);
-  }
   if (!Auth.isLoggedIn()) {
     writeGuestSave(data);
     return;

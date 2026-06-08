@@ -832,9 +832,6 @@ function applyCloudSave(name, raw, pin) {
 }
 
 function writeSave(data) {
-  if (typeof CrazyGamesSdk !== "undefined" && CrazyGamesSdk.enabled()) {
-    CrazyGamesSdk.syncSave(data);
-  }
   if (!Auth.isLoggedIn()) {
     writeGuestSave(data);
     return;
@@ -2804,407 +2801,6 @@ const Share = {
     return result || "failed";
   },
 };
-const CRAZYGAMES_DATA_KEY = "cybertime-save";
-const CRAZYGAMES_BANNER_ID = "cg-banner";
-const CRAZYGAMES_RESPONSIVE_BANNER_ID = "cg-responsive-banner";
-const CRAZYGAMES_LEADERBOARD_ENCRYPTION_KEY = "";
-const CrazyGamesSdk = {
-  _adPlaying: false,
-  _joinListener: null,
-  _authListener: null,
-  _lastFeedback: "",
-
-  enabled() {
-    return window.CYBERTIME_PORTAL === "crazygames" && !!window.CrazyGames?.SDK;
-  },
-
-  sdk() {
-    return this.enabled() ? window.CrazyGames.SDK : null;
-  },
-
-  setFeedback(msg) {
-    this._lastFeedback = msg;
-    console.log("[CrazyGames]", msg);
-  },
-
-  call(module, method, ...args) {
-    const sdk = this.sdk();
-    if (!sdk?.[module]?.[method]) return null;
-    try {
-      return sdk[module][method](...args);
-    } catch (err) {
-      this.setFeedback(`${module}.${method} error`);
-      console.warn(err);
-      return null;
-    }
-  },
-
-  wrapAdCallbacks(callbacks = {}) {
-    return {
-      adStarted: () => {
-        this._adPlaying = true;
-        this.gameplayStop();
-        AudioEngine.stopMusic();
-        callbacks.adStarted?.();
-      },
-      adFinished: () => {
-        this._adPlaying = false;
-        callbacks.adFinished?.();
-      },
-      adError: (error, errorData) => {
-        this._adPlaying = false;
-        callbacks.adError?.(error, errorData);
-      },
-    };
-  },
-
-  requestMidgameAd(callbacks) {
-    this.call("ad", "requestAd", "midgame", this.wrapAdCallbacks(callbacks));
-  },
-
-  requestRewardedAd(callbacks) {
-    this.call("ad", "requestAd", "rewarded", this.wrapAdCallbacks(callbacks));
-  },
-
-  requestBanner(width = 300, height = 250) {
-    this.call("banner", "requestBanner", { id: CRAZYGAMES_BANNER_ID, width, height });
-  },
-
-  requestResponsiveBanner() {
-    this.call("banner", "requestResponsiveBanner", CRAZYGAMES_RESPONSIVE_BANNER_ID);
-  },
-
-  clearBanner() {
-    this.call("banner", "clearBanner", CRAZYGAMES_BANNER_ID);
-  },
-
-  clearAllBanners() {
-    this.call("banner", "clearAllBanners");
-  },
-
-  loadingStart() {
-    this.call("game", "sdkGameLoadingStart");
-  },
-
-  loadingStop() {
-    this.call("game", "sdkGameLoadingStop");
-  },
-
-  gameplayStart() {
-    if (!this._adPlaying) this.call("game", "gameplayStart");
-  },
-
-  gameplayStop() {
-    this.call("game", "gameplayStop");
-  },
-
-  happytime() {
-    this.call("game", "happytime");
-  },
-
-  inviteLink(params = { roomId: "demo" }) {
-    return this.call("game", "inviteLink", params);
-  },
-
-  updateRoom(room = { roomId: "demo", isJoinable: true, inviteParams: { roomId: "demo" } }) {
-    this.call("game", "updateRoom", room);
-  },
-
-  get inviteParams() {
-    return this.sdk()?.game?.inviteParams ?? null;
-  },
-
-  showInviteButton(params = { roomId: "demo" }, callback) {
-    return this.call("game", "showInviteButton", params, callback);
-  },
-
-  hideInviteButton() {
-    this.call("game", "hideInviteButton");
-  },
-
-  addJoinRoomListener(listener) {
-    this._joinListener = listener;
-    this.call("game", "addJoinRoomListener", listener);
-  },
-
-  removeJoinRoomListener() {
-    if (!this._joinListener) return;
-    this.call("game", "removeJoinRoomListener", this._joinListener);
-    this._joinListener = null;
-  },
-
-  async promiseUser(method) {
-    const sdk = this.sdk();
-    if (!sdk?.user?.[method]) return null;
-    return new Promise((resolve, reject) => {
-      sdk.user[method]((error, result) => {
-        if (error) reject(error);
-        else resolve(result);
-      });
-    });
-  },
-
-  showAuthPrompt() {
-    return this.promiseUser("showAuthPrompt");
-  },
-
-  showAccountLinkPrompt() {
-    return this.promiseUser("showAccountLinkPrompt");
-  },
-
-  getUser() {
-    return this.promiseUser("getUser");
-  },
-
-  getUserToken() {
-    return this.promiseUser("getUserToken");
-  },
-
-  getXsollaUserToken() {
-    return this.promiseUser("getXsollaUserToken");
-  },
-
-  addAuthListener(listener) {
-    this._authListener = listener;
-    this.call("user", "addAuthListener", listener);
-  },
-
-  removeAuthListener() {
-    if (!this._authListener) return;
-    this.call("user", "removeAuthListener", this._authListener);
-    this._authListener = null;
-  },
-
-  dataGetItem(key) {
-    return this.call("data", "getItem", key);
-  },
-
-  dataSetItem(key, value) {
-    this.call("data", "setItem", key, value);
-  },
-
-  dataRemoveItem(key) {
-    this.call("data", "removeItem", key);
-  },
-
-  dataClear() {
-    this.call("data", "clear");
-  },
-
-  trackOrder(order = { orderId: "demo-order", status: "done" }) {
-    this.call("analytics", "trackOrder", "xsolla", order);
-  },
-
-  async encryptScore(score) {
-    if (!CRAZYGAMES_LEADERBOARD_ENCRYPTION_KEY) return null;
-    const iv = crypto.getRandomValues(new Uint8Array(12));
-    const algorithm = { name: "AES-GCM", iv };
-    const keyBytes = Uint8Array.from(atob(CRAZYGAMES_LEADERBOARD_ENCRYPTION_KEY), (c) => c.charCodeAt(0));
-    const cryptoKey = await crypto.subtle.importKey("raw", keyBytes, algorithm, false, ["encrypt"]);
-    const dataBuffer = new TextEncoder().encode(String(score));
-    const encryptedBuffer = await crypto.subtle.encrypt(algorithm, cryptoKey, dataBuffer);
-    const combined = new Uint8Array(iv.length + encryptedBuffer.byteLength);
-    combined.set(iv);
-    combined.set(new Uint8Array(encryptedBuffer), iv.length);
-    return btoa(String.fromCharCode(...combined));
-  },
-
-  async submitScore(score) {
-    if (!this.sdk()?.user?.submitScore) return;
-    const encryptedScore = await this.encryptScore(score);
-    if (!encryptedScore) {
-      this.setFeedback("Set CRAZYGAMES_LEADERBOARD_ENCRYPTION_KEY to submit scores");
-      return;
-    }
-    this.call("user", "submitScore", { encryptedScore, score });
-    this.setFeedback(`Score submitted: ${score}`);
-  },
-
-  syncSave(save) {
-    if (!this.sdk()?.data) return;
-    try {
-      this.dataSetItem(CRAZYGAMES_DATA_KEY, JSON.stringify(save));
-    } catch {}
-  },
-
-  loadCloudSave() {
-    if (!this.sdk()?.data) return null;
-    try {
-      const raw = this.dataGetItem(CRAZYGAMES_DATA_KEY);
-      return raw ? JSON.parse(raw) : null;
-    } catch {
-      return null;
-    }
-  },
-
-  showMenuBanner() {
-    this.requestResponsiveBanner();
-  },
-
-  hideBanners() {
-    this.clearAllBanners();
-  },
-
-  init() {
-    if (!this.enabled()) return;
-    this.addAuthListener((user) => {
-      this.setFeedback(user ? `Logged in: ${user.username}` : "Auth listener");
-    });
-    this.addJoinRoomListener((params) => {
-      this.setFeedback(`Join room: ${JSON.stringify(params)}`);
-    });
-    if (this.inviteParams) this.setFeedback(`Invite params: ${JSON.stringify(this.inviteParams)}`);
-    const cloud = this.loadCloudSave();
-    if (cloud) {
-      try {
-        writeSave(normalizeSave(cloud));
-      } catch {}
-    }
-  },
-};
-const CrazyGamesHooks = {
-  _rewardPending: null,
-
-  onGameOver(game, save) {
-    if (!CrazyGamesSdk.enabled()) return;
-    if (game.lastRewards?.success) {
-      CrazyGamesSdk.submitScore(game.score);
-    }
-  },
-
-  onMenu() {
-    if (!CrazyGamesSdk.enabled()) return;
-    CrazyGamesSdk.showMenuBanner();
-  },
-
-  onEnterGame() {
-    if (!CrazyGamesSdk.enabled()) return;
-    CrazyGamesSdk.hideBanners();
-  },
-
-  requestMidgameBefore(action) {
-    if (!CrazyGamesSdk.enabled()) {
-      action();
-      return;
-    }
-    CrazyGamesSdk.requestMidgameAd({
-      adFinished: action,
-      adError: action,
-    });
-  },
-
-  offerRewardedCoins(save, onDone) {
-    if (!CrazyGamesSdk.enabled()) return;
-    CrazyGamesSdk.requestRewardedAd({
-      adFinished: () => {
-        save.coins += 50;
-        writeSave(save);
-        onDone?.("Rewarded +50 coins!");
-      },
-      adError: () => onDone?.("Ad unavailable"),
-    });
-  },
-};
-const CrazyGamesUi = {
-  scrollY: 0,
-  maxScroll: 0,
-  feedback: "",
-
-  actions() {
-    return [
-      ["cgMidgame", "MIDGAME AD", () => CrazyGamesSdk.requestMidgameAd({ adFinished: () => this.flash("Midgame done") })],
-      ["cgRewarded", "REWARDED AD", () => CrazyGamesSdk.requestRewardedAd({ adFinished: () => this.flash("Rewarded done") })],
-      ["cgBanner", "REQUEST BANNER", () => { CrazyGamesSdk.requestBanner(); this.flash("Banner requested"); }],
-      ["cgRespBanner", "RESPONSIVE BANNER", () => { CrazyGamesSdk.requestResponsiveBanner(); this.flash("Responsive banner"); }],
-      ["cgClearBanner", "CLEAR BANNER", () => { CrazyGamesSdk.clearBanner(); this.flash("Banner cleared"); }],
-      ["cgClearAll", "CLEAR ALL BANNERS", () => { CrazyGamesSdk.clearAllBanners(); this.flash("All cleared"); }],
-      ["cgHappy", "HAPPYTIME", () => { CrazyGamesSdk.happytime(); this.flash("Happytime"); }],
-      ["cgGpStart", "GAMEPLAY START", () => { CrazyGamesSdk.gameplayStart(); this.flash("Gameplay start"); }],
-      ["cgGpStop", "GAMEPLAY STOP", () => { CrazyGamesSdk.gameplayStop(); this.flash("Gameplay stop"); }],
-      ["cgLoadStart", "LOADING START", () => { CrazyGamesSdk.loadingStart(); this.flash("Loading start"); }],
-      ["cgLoadStop", "LOADING STOP", () => { CrazyGamesSdk.loadingStop(); this.flash("Loading stop"); }],
-      ["cgInvite", "INVITE LINK", () => this.flash(CrazyGamesSdk.inviteLink() || "Invite link")],
-      ["cgRoom", "UPDATE ROOM", () => { CrazyGamesSdk.updateRoom(); this.flash("Room updated"); }],
-      ["cgShowInv", "SHOW INVITE BTN", () => { CrazyGamesSdk.showInviteButton(); this.flash("Invite button"); }],
-      ["cgHideInv", "HIDE INVITE BTN", () => { CrazyGamesSdk.hideInviteButton(); this.flash("Invite hidden"); }],
-      ["cgAuth", "AUTH PROMPT", () => CrazyGamesSdk.showAuthPrompt().then((u) => this.flash(u?.username || "Auth done")).catch(() => this.flash("Auth failed"))],
-      ["cgLink", "LINK ACCOUNT", () => CrazyGamesSdk.showAccountLinkPrompt().then((r) => this.flash(JSON.stringify(r))).catch(() => this.flash("Link failed"))],
-      ["cgUser", "GET USER", () => CrazyGamesSdk.getUser().then((u) => this.flash(u?.username || "No user")).catch(() => this.flash("Get user failed"))],
-      ["cgToken", "GET USER TOKEN", () => CrazyGamesSdk.getUserToken().then((t) => this.flash(t ? "Token OK" : "No token")).catch(() => this.flash("Token failed"))],
-      ["cgXsolla", "GET XSOLLA TOKEN", () => CrazyGamesSdk.getXsollaUserToken().then((t) => this.flash(t ? "Xsolla OK" : "No token")).catch(() => this.flash("Xsolla failed"))],
-      ["cgScore", "SUBMIT SCORE", () => CrazyGamesSdk.submitScore(100)],
-      ["cgSet", "DATA SET", () => { CrazyGamesSdk.dataSetItem("cg-test", "1"); this.flash("Data set"); }],
-      ["cgGet", "DATA GET", () => this.flash(CrazyGamesSdk.dataGetItem("cg-test") || "null")],
-      ["cgRm", "DATA REMOVE", () => { CrazyGamesSdk.dataRemoveItem("cg-test"); this.flash("Data removed"); }],
-      ["cgClr", "DATA CLEAR", () => { CrazyGamesSdk.dataClear(); this.flash("Data cleared"); }],
-      ["cgOrder", "TRACK ORDER", () => { CrazyGamesSdk.trackOrder(); this.flash("Order tracked"); }],
-    ];
-  },
-
-  flash(msg) {
-    this.feedback = msg;
-    CrazyGamesSdk.setFeedback(msg);
-  },
-
-  rowHeight() {
-    return Input.touchMode ? 52 : 44;
-  },
-
-  updateScroll() {
-    const rows = this.actions().length;
-    const content = 150 + rows * (this.rowHeight() + 8);
-    this.maxScroll = Math.max(0, content - (viewH() - 120));
-    this.scrollY = Math.min(this.scrollY, this.maxScroll);
-  },
-
-  draw(save, mousePos, now) {
-    Screens.resetButtons();
-    const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, App.stars);
-    this.updateScroll();
-
-    App.ctx.font = gameFont(Input.touchMode ? 36 : 44);
-    App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("CRAZYGAMES SDK", Input.touchMode ? 32 : 80, Input.touchMode ? 64 : 72);
-
-    const pad = Input.touchMode ? 32 : 80;
-    const btnW = viewW() - pad * 2;
-    const btnH = this.rowHeight();
-    let y = 120 - this.scrollY;
-
-    this.actions().forEach(([id, label, run]) => {
-      if (y + btnH > 100 && y < viewH() - 80) {
-        const rect = Screens.btn(id, label, pad, y, btnW, btnH);
-        drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), true);
-      }
-      y += btnH + 8;
-    });
-
-    if (this.feedback || CrazyGamesSdk._lastFeedback) {
-      App.ctx.font = uiFont(16);
-      App.ctx.fillStyle = rgb(COLORS.green);
-      const note = this.feedback || CrazyGamesSdk._lastFeedback;
-      App.ctx.fillText(note, pad, viewH() - 100);
-    }
-
-    drawNeonButton(App.ctx, Screens.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, Screens.buttons.back));
-    Screens.finishButtons();
-  },
-
-  handleClick(pos) {
-    if (Screens._hit("back", pos)) {
-      App.state = "settings";
-      return true;
-    }
-    for (const [id, , run] of this.actions()) {
-      if (Screens._hit(id, pos)) {
-        run();
-        return true;
-      }
-    }
-    return true;
-  },
-};
 const OFFICIAL_SITE_URL = "https://www.joseph-weiss.com/cybertime/";
 const PROMO_COOLDOWN_MS = 10 * 60 * 1000;
 const PROMO_MENU_WAIT_MS = 3 * 60 * 1000;
@@ -3827,10 +3423,6 @@ const Screens = {
       drawNeonButton(App.ctx, this.btn("account", accountLabel, pad, y, btnW, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
       y += btnH + stackGap;
       drawNeonButton(App.ctx, this.btn("toggleMobile", "MOBILE: ON", pad, y, btnW, btnH), "MOBILE: ON", pointInRect(mousePos, this.buttons.toggleMobile), true);
-      if (CrazyGamesSdk.enabled()) {
-        y += btnH + stackGap;
-        drawNeonButton(App.ctx, this.btn("cgSdk", "SDK PANEL", pad, y, btnW, btnH), "SDK PANEL", pointInRect(mousePos, this.buttons.cgSdk), true);
-      }
       if (!PwaInstall.isStandalone()) {
         y += btnH + stackGap;
         const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
@@ -3846,9 +3438,6 @@ const Screens = {
       drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - 70, 580, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
       drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
       drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnH), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
-      if (CrazyGamesSdk.enabled()) {
-        drawNeonButton(App.ctx, this.btn("cgSdk", "SDK PANEL", 520, settingsY, 140, btnH), "SDK PANEL", pointInRect(mousePos, this.buttons.cgSdk), true);
-      }
     }
 
     drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
@@ -3956,12 +3545,7 @@ const Screens = {
       }
     }
 
-    let btnY = viewH() - (Input.touchMode ? 110 : 90);
-    if (CrazyGamesSdk.enabled()) {
-      const rewardBtn = this.btn("cgReward", "WATCH AD +50 COINS", null, btnY - btnHeight(48) - 12, null, btnHeight(44));
-      drawNeonButton(App.ctx, rewardBtn, "WATCH AD +50 COINS", pointInRect(mousePos, rewardBtn), true);
-      btnY -= btnHeight(48) + 12;
-    }
+    const btnY = viewH() - (Input.touchMode ? 110 : 90);
     if (!infinite) {
       const leaderboardY = canShare ? Math.min(blockY + 8, btnY - 170) : 330;
       drawLeaderboardPanel(App.ctx, save, game.level.id, 80, leaderboardY);
@@ -4064,12 +3648,9 @@ const Screens = {
         if (PwaInstall.canPromptInstall()) PwaInstall.promptInstall();
         return true;
       }
-      if (this._hit("cgSdk", pos)) { CrazyGamesUi.scrollY = 0; App.state = "cg-sdk"; return true; }
       if (this._hit("back", pos)) { App.state = "menu"; this.waitingKey = null; return true; }
       this._handleSliderDrag(save, pos);
     }
-
-    if (state === "cg-sdk") return CrazyGamesUi.handleClick(pos);
 
     if (state === "howto" && this._hit("back", pos)) { App.state = "menu"; return true; }
 
@@ -4094,21 +3675,8 @@ const Screens = {
         });
         return true;
       }
-      if (this._hit("cgReward", pos)) {
-        CrazyGamesHooks.offerRewardedCoins(save, (msg) => {
-          Screens.shareFeedback = msg;
-          setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
-        });
-        return true;
-      }
-      if (this._hit("next", pos)) {
-        CrazyGamesHooks.requestMidgameBefore(() => App.startNextLevel());
-        return true;
-      }
-      if (this._hit("restart", pos)) {
-        CrazyGamesHooks.requestMidgameBefore(() => App.requestStartGame(App.lastLevel));
-        return true;
-      }
+      if (this._hit("next", pos)) { App.startNextLevel(); return true; }
+      if (this._hit("restart", pos)) { App.requestStartGame(App.lastLevel); return true; }
     }
 
     return false;
@@ -4129,9 +3697,6 @@ const Screens = {
           if (this.shopTab === "skins") save.equippedSkin = item.id;
           else save.equippedBackground = item.id;
           writeSave(save);
-          if (CrazyGamesSdk.enabled()) {
-            CrazyGamesSdk.trackOrder({ orderId: `shop-${item.id}`, status: "done" });
-          }
         }
         return true;
       }
@@ -4194,7 +3759,6 @@ const App = {
     this.bindNameForm();
 
     Auth.init(() => this.startSession());
-    CrazyGamesSdk.init();
 
     document.getElementById("wrapper")?.classList.add("session-active");
 
@@ -4277,14 +3841,10 @@ const App = {
       AudioEngine.setVolumes(this.save.settings);
       Auth.hideNameScreen();
       this.sessionReady = true;
-      CrazyGamesSdk.loadingStop();
       if (this.state !== "game" || !this.game?.running) {
         this.state = this.state === "settings" ? "settings" : "menu";
       }
-      if (this.state === "menu") {
-        CrazyGamesHooks.onMenu();
-        AudioEngine.startMenuMusic();
-      }
+      if (this.state === "menu") AudioEngine.startMenuMusic();
       if (Input.touchMode) MobileShell.syncRotatePrompt();
     } catch (err) {
       console.error(err);
@@ -4398,10 +3958,6 @@ const App = {
         Screens.scrollList(e.deltaY * 0.6);
         e.preventDefault();
       }
-      if (App.state === "cg-sdk") {
-        CrazyGamesUi.scrollY = Math.max(0, Math.min(CrazyGamesUi.maxScroll, CrazyGamesUi.scrollY + e.deltaY * 0.6));
-        e.preventDefault();
-      }
     }, { passive: false });
   },
 
@@ -4411,7 +3967,6 @@ const App = {
   },
 
   goHome() {
-    CrazyGamesSdk.gameplayStop();
     MobileShell.exitPlayMode();
     this.game = null;
     this.pendingLevel = null;
@@ -4420,7 +3975,6 @@ const App = {
     Screens.shareFeedback = "";
     Share.reset();
     this.state = "menu";
-    CrazyGamesHooks.onMenu();
     AudioEngine.startMenuMusic();
   },
 
@@ -4452,8 +4006,6 @@ const App = {
   },
 
   async launchGame(level) {
-    CrazyGamesSdk.gameplayStop();
-    CrazyGamesHooks.onEnterGame();
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
@@ -4465,7 +4017,6 @@ const App = {
   beginGame(now) {
     if (!this.game || this.game.started) return;
     GameLogic.beginGame(this.game, now);
-    CrazyGamesSdk.gameplayStart();
   },
 
   startNextLevel() {
@@ -4476,15 +4027,12 @@ const App = {
 
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
-    CrazyGamesSdk.gameplayStop();
     this.game.endReason = reason;
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
-    if (this.game.lastRewards?.success) CrazyGamesSdk.happytime();
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     SitePromo.onGameOver();
-    CrazyGamesHooks.onGameOver(this.game, this.save);
     this.state = "gameover";
   },
 
@@ -4537,9 +4085,6 @@ const App = {
         this.renderCursor(this.save);
       } else if (this.state === "settings") {
         Screens.drawSettings(this.save, mousePos, now);
-        this.renderCursor(this.save);
-      } else if (this.state === "cg-sdk") {
-        CrazyGamesUi.draw(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "howto") {
         Screens.drawHowTo(mousePos, now, this.save);
