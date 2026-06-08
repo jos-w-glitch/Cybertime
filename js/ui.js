@@ -25,17 +25,22 @@ const Screens = {
   },
 
   buttonStackGap() {
-    return Input.touchMode ? 28 : 12;
+    return Input.touchMode ? 34 : 12;
   },
 
   menuPanelPadY() {
-    return Input.touchMode ? 28 : 18;
+    return Input.touchMode ? 32 : 18;
+  },
+
+  menuContentHeight() {
+    const gap = this.buttonStackGap();
+    const primaryH = uiBtnHeight(58);
+    const rowH = uiBtnHeight(46);
+    return primaryH + gap + (rowH + gap) * 3;
   },
 
   infiniteCycleBlockStep() {
-    const btnH = btnHeight(Input.touchMode ? 52 : 44);
-    const header = Input.touchMode ? 68 : 72;
-    return header + btnH + this.buttonStackGap();
+    return uiBtnHeight(Input.touchMode ? 48 : 44) + this.buttonStackGap();
   },
 
   actionButtonWidth() {
@@ -69,7 +74,11 @@ const Screens = {
     const halfW = (fullW - colGap) / 2;
     const primaryH = uiBtnHeight(58);
     const rowH = uiBtnHeight(46);
-    let y = Input.touchMode ? 288 : 308;
+    const padY = this.menuPanelPadY();
+    const contentH = this.menuContentHeight();
+    const panelH = contentH + padY * 2;
+    const panelY = (viewH() - panelH) / 2;
+    const y = panelY + padY;
 
     const slots = {
       start: { x, y, w: fullW, h: primaryH },
@@ -82,9 +91,9 @@ const Screens = {
     };
     const panel = {
       x: x - 18,
-      y: slots.start.y - this.menuPanelPadY(),
+      y: panelY,
       w: fullW + 36,
-      h: slots.howto.y + slots.howto.h - slots.start.y + this.menuPanelPadY() * 2,
+      h: panelH,
     };
     return { slots, panel };
   },
@@ -100,7 +109,7 @@ const Screens = {
   },
 
   listRowHeight() {
-    return Input.touchMode ? 92 : 76;
+    return Input.touchMode ? 98 : 76;
   },
 
   listTop() {
@@ -155,25 +164,33 @@ const Screens = {
   },
 
   drawInfiniteCycleBlock(label, valueText, btnId, x, y, w, mousePos) {
-    const btnH = btnHeight(Input.touchMode ? 52 : 44);
-    const labelSize = Input.touchMode ? 20 : 22;
-    const valueSize = Input.touchMode ? 24 : 28;
-    const labelY = y;
-    const valueY = y + (Input.touchMode ? 34 : 38);
-    const btnY = y + (Input.touchMode ? 68 : 72);
+    const rowH = uiBtnHeight(Input.touchMode ? 48 : 44);
+    const btnW = Input.touchMode ? 108 : 96;
+    const gap = uiBtnGap(10);
+    const labelText = `${label}:`;
+    const fontSize = Input.touchMode ? 20 : 22;
+    const textY = y + rowH * 0.68;
 
-    App.ctx.font = uiFont(labelSize);
+    App.ctx.font = uiFont(fontSize);
     App.ctx.fillStyle = rgb(COLORS.gold);
-    App.ctx.fillText(label, x, labelY);
+    App.ctx.fillText(labelText, x, textY);
+    const labelW = App.ctx.measureText(labelText).width;
 
-    App.ctx.font = uiFont(valueSize);
+    const btnX = x + w - btnW;
+    const valueX = x + labelW + gap;
+    const valueMaxW = Math.max(40, btnX - valueX - gap);
+
     App.ctx.fillStyle = rgb(COLORS.text);
-    const valueW = App.ctx.measureText(valueText).width;
-    App.ctx.fillText(valueText, x + (w - valueW) / 2, valueY);
+    let displayValue = valueText;
+    while (displayValue.length > 1 && App.ctx.measureText(`${displayValue}…`).width > valueMaxW) {
+      displayValue = displayValue.slice(0, -1);
+    }
+    if (displayValue !== valueText) displayValue += "…";
+    App.ctx.fillText(displayValue, valueX, textY);
 
-    const rect = this.btn(btnId, "NEXT", x, btnY, w, btnH);
+    const rect = this.btn(btnId, "NEXT", btnX, y, btnW, rowH);
     drawNeonButton(App.ctx, rect, "NEXT", pointInRect(mousePos, rect), true);
-    return btnY + btnH + this.buttonStackGap();
+    return y + rowH + this.buttonStackGap();
   },
 
   screenPad() {
@@ -181,7 +198,7 @@ const Screens = {
   },
 
   shopRowHeight() {
-    return Input.touchMode ? 182 : 130;
+    return Input.touchMode ? 192 : 130;
   },
 
   shopListTop() {
@@ -510,7 +527,7 @@ const Screens = {
     App.ctx.fillText(playerLine, btnX + 16, 268);
 
     let y = 300;
-    const panelPad = Input.touchMode ? 24 : 20;
+    const panelPad = Input.touchMode ? 28 : 20;
     const panelH = panelPad * 2 + btnH;
     drawUiPanel(App.ctx, { x: btnX - 16, y: y - panelPad, w: btnW + 32, h: panelH });
 

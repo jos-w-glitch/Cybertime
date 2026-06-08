@@ -42,7 +42,7 @@ function uiBtnHeight(size = 48) {
 }
 
 function uiBtnGap(size = 12) {
-  return Input?.touchMode ? Math.round(size + 20) : Math.round(size);
+  return Input?.touchMode ? Math.round(size + 26) : Math.round(size);
 }
 
 function iconButtonSize() {
