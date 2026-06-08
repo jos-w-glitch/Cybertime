@@ -3196,7 +3196,6 @@ const CreatorStore = {
 
   resetDraft() {
     this._draft = defaultCreatorDraft();
-    CreatorDom?.syncNameField?.(this._draft);
     return this._draft;
   },
 
@@ -3515,45 +3514,18 @@ function cycleCreatorTrack(draft, delta) {
   draft._pendingMusic = null;
 }
 const CreatorDom = {
-  _nameRect: null,
+  _nameSaveCb: null,
 
   init() {
-    const name = document.getElementById("creator-name-input");
-    name?.addEventListener("input", () => {
-      CreatorStore.draft().name = name.value.slice(0, 24);
+    document.getElementById("creator-name-ok")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      this._saveNameEditor();
     });
-
-    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachMusic(file);
-      } catch (err) {
-        console.error(err);
+    document.getElementById("creator-name-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this._saveNameEditor();
       }
-      e.target.value = "";
-    });
-
-    document.getElementById("creator-reward-bg-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachRewardBg(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
-    });
-
-    document.getElementById("creator-reward-cursor-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachRewardCursor(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
     });
 
     document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
@@ -3561,30 +3533,45 @@ const CreatorDom = {
     document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
   },
 
-  setActive(state) {
-    const showName = state === "creator" && CreatorUi.page === "stage";
-    const nameEl = document.getElementById("creator-name-input");
-    if (nameEl) nameEl.classList.toggle("hidden", !showName);
-    if (!showName) this._nameRect = null;
+  pickFile(accept, onPick) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0.01";
+    document.body.appendChild(input);
+    const finish = () => input.remove();
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      finish();
+      if (file) onPick(file);
+    }, { once: true });
+    input.click();
   },
 
-  syncNameField(draft) {
-    const el = document.getElementById("creator-name-input");
-    if (el && el.value !== draft.name) el.value = draft.name || "";
+  openNameEditor(value, onSave) {
+    const modal = document.getElementById("creator-name-modal");
+    const input = document.getElementById("creator-name-input");
+    if (!modal || !input) return;
+    this._nameSaveCb = onSave;
+    input.value = value || "";
+    modal.classList.remove("hidden");
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
   },
 
-  positionNameField(rect) {
-    this._nameRect = rect;
-    const el = document.getElementById("creator-name-input");
-    const canvas = App?.canvas;
-    if (!el || !canvas || !rect) return;
-    const box = canvas.getBoundingClientRect();
-    const sx = box.width / viewW();
-    const sy = box.height / viewH();
-    el.style.left = `${box.left + rect.x * sx}px`;
-    el.style.top = `${box.top + rect.y * sy}px`;
-    el.style.width = `${rect.w * sx}px`;
-    el.style.height = `${rect.h * sy}px`;
+  closeNameEditor() {
+    document.getElementById("creator-name-modal")?.classList.add("hidden");
+    this._nameSaveCb = null;
+  },
+
+  _saveNameEditor() {
+    const input = document.getElementById("creator-name-input");
+    const name = input?.value?.trim().slice(0, 24) || "";
+    if (this._nameSaveCb) this._nameSaveCb(name);
+    CreatorStore.draft().name = name;
+    this.closeNameEditor();
   },
 
   showShareModal(stageName, levelId) {
@@ -3645,7 +3632,12 @@ const CreatorUi = {
     if (this.page === "rewards") CreatorRewardUi.drawRewards(save, mousePos, now);
     else if (this.page === "pickReward") CreatorRewardUi.drawPickReward(save, mousePos, now);
     else this.drawStage(save, mousePos, now);
-    CreatorDom.setActive(App.state);
+  },
+
+  handlePointerDown(pos) {
+    if (this.page === "rewards") return CreatorRewardUi.handlePointerDown(pos);
+    if (this.page === "stage") return this._stagePointerDown(pos);
+    return false;
   },
 
   drawLevels(save, mousePos, now) {
@@ -3732,7 +3724,6 @@ const CreatorUi = {
     Screens.resetButtons();
     drawBackground(App.ctx, now, getBackgroundById(save.equippedBackground), App.stars, save);
     const draft = CreatorStore.draft();
-    CreatorDom.syncNameField(draft);
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
     const rowH = 64;
@@ -3747,12 +3738,18 @@ const CreatorUi = {
 
     y = this._rowLabel("STAGE NAME", pad, y, cardW);
     const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: uiBtnHeight(40) };
-    Screens.buttons.cgNameField = nameRect;
+    Screens.btn("cgNameField", "NAME", nameRect.x, nameRect.y, nameRect.w, nameRect.h);
+    App.ctx.fillStyle = "rgba(18,18,28,0.85)";
+    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
+    App.ctx.fill();
     App.ctx.strokeStyle = rgb(COLORS.gray);
     App.ctx.lineWidth = 2;
     roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
     App.ctx.stroke();
-    CreatorDom.positionNameField(nameRect);
+    App.ctx.font = uiFont(20);
+    App.ctx.fillStyle = rgb(draft.name ? COLORS.text : COLORS.gray);
+    const nameText = draft.name || "Tap to enter name…";
+    App.ctx.fillText(nameText, nameRect.x + 14, nameRect.y + 26);
     y += uiBtnHeight(40) + 14;
 
     y = this._rowLabel("BPM", pad, y, cardW);
@@ -3855,6 +3852,25 @@ const CreatorUi = {
     return this._handleStageClick(save, pos);
   },
 
+  _stagePointerDown(pos) {
+    const draft = CreatorStore.draft();
+    if (this._hit("cgNameField", pos)) {
+      CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
+      return true;
+    }
+    if (this._hit("cgMusic", pos)) {
+      CreatorDom.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", async (file) => {
+        try {
+          await CreatorStore.attachMusic(file);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      return true;
+    }
+    return false;
+  },
+
   _handleStageClick(save, pos) {
     const draft = CreatorStore.draft();
     if (this._hit("cgBack", pos)) { App.state = "levels"; this.levelsTab = "community"; return true; }
@@ -3862,12 +3878,12 @@ const CreatorUi = {
     if (this._hit("cgBpmUp", pos)) { adjustCreatorBpm(draft, 1); return true; }
     if (this._hit("cgTrackDown", pos)) { cycleCreatorTrack(draft, -1); return true; }
     if (this._hit("cgTrackUp", pos)) { cycleCreatorTrack(draft, 1); return true; }
-    if (this._hit("cgMusic", pos)) { document.getElementById("creator-music-input")?.click(); return true; }
+    if (this._hit("cgMusic", pos)) return true;
     if (this._hit("cgEditRewards", pos)) { this.page = "rewards"; Screens.resetScroll(); return true; }
     if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
     if (this._hit("cgPublish", pos)) {
-      const name = document.getElementById("creator-name-input")?.value?.trim() || draft.name;
+      const name = draft.name?.trim() || "MY STAGE";
       draft.name = name;
       CreatorStore.saveDraft().then((id) => {
         CreatorDom.showShareModal(name || "My Stage", id);
@@ -3987,6 +4003,35 @@ const CreatorRewardUi = {
   },
 
   handleRewardsClick(save, pos) {
+    return this._handleRewardsClick(save, pos);
+  },
+
+  handlePointerDown(pos) {
+    const draft = CreatorStore.rewardDraft();
+    if (Screens._hit("cgrBgUpload", pos)) {
+      CreatorDom.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", async (file) => {
+        try {
+          await CreatorStore.attachRewardBg(file);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      return true;
+    }
+    if (Screens._hit("cgrCursorUpload", pos)) {
+      CreatorDom.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", async (file) => {
+        try {
+          await CreatorStore.attachRewardCursor(file);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      return true;
+    }
+    return false;
+  },
+
+  _handleRewardsClick(save, pos) {
     const draft = CreatorStore.rewardDraft();
     if (Screens._hit("cgrBack", pos)) { CreatorUi.page = "stage"; return true; }
     if (Screens._hit("cgrName", pos)) {
@@ -3994,8 +4039,8 @@ const CreatorRewardUi = {
       draft.name = names[(names.indexOf(draft.name) + 1) % names.length];
       return true;
     }
-    if (Screens._hit("cgrBgUpload", pos)) { document.getElementById("creator-reward-bg-input")?.click(); return true; }
-    if (Screens._hit("cgrCursorUpload", pos)) { document.getElementById("creator-reward-cursor-input")?.click(); return true; }
+    if (Screens._hit("cgrBgUpload", pos)) return true;
+    if (Screens._hit("cgrCursorUpload", pos)) return true;
     if (Screens._hit("cgrSave", pos)) {
       CreatorStore.saveRewardDraft().then(() => { CreatorUi.page = "pickReward"; });
       return true;
@@ -5043,6 +5088,8 @@ const App = {
         if (clickResult === "begin") this.beginGame(performance.now());
         return;
       }
+
+      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
 
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);

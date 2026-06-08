@@ -255,20 +255,18 @@
       color: #8090a0 !important;
       border: 2px solid #3c3c4b !important;
     }
-    #creator-name-input {
+    #creator-name-modal {
       position: fixed;
-      z-index: 150;
-      border: 2px solid #00ffc8;
-      border-radius: 8px;
-      background: #12121c;
-      color: #00ffc8;
-      font-family: "Cyberjunkies", sans-serif;
-      font-size: 18px;
-      padding: 8px 12px;
-      outline: none;
+      inset: 0;
+      z-index: 400;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 10, 18, 0.92);
       pointer-events: auto;
     }
-    #creator-name-input.hidden { display: none !important; }
+    #creator-name-modal.hidden { display: none !important; }
+    #creator-name-modal .name-input { width: 100%; margin-bottom: 12px; }
     #creator-share-modal {
       position: fixed;
       inset: 0;
@@ -338,10 +336,13 @@
     <button id="install-action" type="button">INSTALL APP</button>
     <button id="install-dismiss" type="button">NOT NOW</button>
   </div>
-  <input id="creator-name-input" class="hidden" type="text" maxlength="24" placeholder="Stage name" autocomplete="off">
-  <input id="creator-music-input" type="file" accept="audio/*" hidden>
-  <input id="creator-reward-bg-input" type="file" accept="image/*,video/*" hidden>
-  <input id="creator-reward-cursor-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+  <div id="creator-name-modal" class="hidden">
+    <div class="share-card">
+      <h2>STAGE NAME</h2>
+      <input id="creator-name-input" class="name-input" type="text" maxlength="24" placeholder="Enter stage name" autocomplete="off">
+      <button id="creator-name-ok" type="button">OK</button>
+    </div>
+  </div>
   <div id="creator-share-modal" class="hidden">
     <div class="share-card">
       <h2>STAGE PUBLISHED!</h2>

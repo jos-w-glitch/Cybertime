@@ -169,6 +169,8 @@ const App = {
         return;
       }
 
+      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
+
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);
         Screens.scrollDrag.dragged = false;

@@ -98,6 +98,35 @@ const CreatorRewardUi = {
   },
 
   handleRewardsClick(save, pos) {
+    return this._handleRewardsClick(save, pos);
+  },
+
+  handlePointerDown(pos) {
+    const draft = CreatorStore.rewardDraft();
+    if (Screens._hit("cgrBgUpload", pos)) {
+      CreatorDom.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", async (file) => {
+        try {
+          await CreatorStore.attachRewardBg(file);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      return true;
+    }
+    if (Screens._hit("cgrCursorUpload", pos)) {
+      CreatorDom.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", async (file) => {
+        try {
+          await CreatorStore.attachRewardCursor(file);
+        } catch (err) {
+          console.error(err);
+        }
+      });
+      return true;
+    }
+    return false;
+  },
+
+  _handleRewardsClick(save, pos) {
     const draft = CreatorStore.rewardDraft();
     if (Screens._hit("cgrBack", pos)) { CreatorUi.page = "stage"; return true; }
     if (Screens._hit("cgrName", pos)) {
@@ -105,8 +134,8 @@ const CreatorRewardUi = {
       draft.name = names[(names.indexOf(draft.name) + 1) % names.length];
       return true;
     }
-    if (Screens._hit("cgrBgUpload", pos)) { document.getElementById("creator-reward-bg-input")?.click(); return true; }
-    if (Screens._hit("cgrCursorUpload", pos)) { document.getElementById("creator-reward-cursor-input")?.click(); return true; }
+    if (Screens._hit("cgrBgUpload", pos)) return true;
+    if (Screens._hit("cgrCursorUpload", pos)) return true;
     if (Screens._hit("cgrSave", pos)) {
       CreatorStore.saveRewardDraft().then(() => { CreatorUi.page = "pickReward"; });
       return true;

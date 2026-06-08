@@ -1,43 +1,16 @@
 const CreatorDom = {
-  _nameRect: null,
+  _nameSaveCb: null,
 
   init() {
-    const name = document.getElementById("creator-name-input");
-    name?.addEventListener("input", () => {
-      CreatorStore.draft().name = name.value.slice(0, 24);
+    document.getElementById("creator-name-ok")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      this._saveNameEditor();
     });
-
-    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachMusic(file);
-      } catch (err) {
-        console.error(err);
+    document.getElementById("creator-name-input")?.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        this._saveNameEditor();
       }
-      e.target.value = "";
-    });
-
-    document.getElementById("creator-reward-bg-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachRewardBg(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
-    });
-
-    document.getElementById("creator-reward-cursor-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachRewardCursor(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
     });
 
     document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
@@ -45,30 +18,45 @@ const CreatorDom = {
     document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
   },
 
-  setActive(state) {
-    const showName = state === "creator" && CreatorUi.page === "stage";
-    const nameEl = document.getElementById("creator-name-input");
-    if (nameEl) nameEl.classList.toggle("hidden", !showName);
-    if (!showName) this._nameRect = null;
+  pickFile(accept, onPick) {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = accept;
+    input.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0.01";
+    document.body.appendChild(input);
+    const finish = () => input.remove();
+    input.addEventListener("change", () => {
+      const file = input.files?.[0];
+      finish();
+      if (file) onPick(file);
+    }, { once: true });
+    input.click();
   },
 
-  syncNameField(draft) {
-    const el = document.getElementById("creator-name-input");
-    if (el && el.value !== draft.name) el.value = draft.name || "";
+  openNameEditor(value, onSave) {
+    const modal = document.getElementById("creator-name-modal");
+    const input = document.getElementById("creator-name-input");
+    if (!modal || !input) return;
+    this._nameSaveCb = onSave;
+    input.value = value || "";
+    modal.classList.remove("hidden");
+    setTimeout(() => {
+      input.focus();
+      input.select();
+    }, 0);
   },
 
-  positionNameField(rect) {
-    this._nameRect = rect;
-    const el = document.getElementById("creator-name-input");
-    const canvas = App?.canvas;
-    if (!el || !canvas || !rect) return;
-    const box = canvas.getBoundingClientRect();
-    const sx = box.width / viewW();
-    const sy = box.height / viewH();
-    el.style.left = `${box.left + rect.x * sx}px`;
-    el.style.top = `${box.top + rect.y * sy}px`;
-    el.style.width = `${rect.w * sx}px`;
-    el.style.height = `${rect.h * sy}px`;
+  closeNameEditor() {
+    document.getElementById("creator-name-modal")?.classList.add("hidden");
+    this._nameSaveCb = null;
+  },
+
+  _saveNameEditor() {
+    const input = document.getElementById("creator-name-input");
+    const name = input?.value?.trim().slice(0, 24) || "";
+    if (this._nameSaveCb) this._nameSaveCb(name);
+    CreatorStore.draft().name = name;
+    this.closeNameEditor();
   },
 
   showShareModal(stageName, levelId) {

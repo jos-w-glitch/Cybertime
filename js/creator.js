@@ -26,7 +26,6 @@ const CreatorStore = {
 
   resetDraft() {
     this._draft = defaultCreatorDraft();
-    CreatorDom?.syncNameField?.(this._draft);
     return this._draft;
   },
 
