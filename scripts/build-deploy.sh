@@ -8,6 +8,13 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 rm -rf "$DIST"
 mkdir -p "$GAME/assets" "$GAME/assets/fonts" "$GAME/music"
 
+ANALYTICS_SRC="$ROOT/node_modules/@vercel/analytics/dist/index.mjs"
+if [ ! -f "$ANALYTICS_SRC" ]; then
+  echo "Missing @vercel/analytics — run: npm install" >&2
+  exit 1
+fi
+cp "$ANALYTICS_SRC" "$DIST/analytics.mjs"
+
 CSS="$(cat "$SCRIPT_DIR/home.css")"
 while IFS= read -r line || [[ -n "$line" ]]; do
   if [[ "$line" == *"<!--STYLES-->"* ]]; then

@@ -1,7 +1,7 @@
 {
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
-  "installCommand": "echo skip",
+  "installCommand": "npm install",
   "framework": null,
   "trailingSlash": true,
   "build": {
