@@ -22,27 +22,14 @@ const Screens = {
     return rect;
   },
 
-  menuLayout() {
-    const btnH = btnHeight(52);
-    const gap = 65;
-    const top = Input.touchMode ? 300 : 340;
-    return {
-      pad: this.screenPad(),
-      btnH,
-      top,
-      gap,
-      titleSize: Input.touchMode ? 72 : 92,
-    };
-  },
-
-  buttonStackGap() {
-    return Input.touchMode ? 20 : 12;
-  },
-
   menuBtnY(index) {
     const start = Input.touchMode ? 290 : 340;
     const gap = Input.touchMode ? 84 : 65;
     return start + index * gap;
+  },
+
+  buttonStackGap() {
+    return 12;
   },
 
   playBtnSize() {
@@ -169,49 +156,39 @@ const Screens = {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars);
-    const layout = this.menuLayout();
 
-    App.ctx.font = gameFont(layout.titleSize);
+    App.ctx.font = gameFont(72);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText(GAME_NAME, (viewW() - App.ctx.measureText(GAME_NAME).width) / 2, Input.touchMode ? 100 : 110);
+    App.ctx.fillText(GAME_NAME, (viewW() - App.ctx.measureText(GAME_NAME).width) / 2, 120);
 
-    App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
+    App.ctx.font = gameFont(22);
     App.ctx.fillStyle = rgb(COLORS.gold);
     const userLine = Auth.isLoggedIn()
       ? `PLAYER: ${Auth.displayName}`
       : "GUEST — login in Settings for leaderboard";
-    App.ctx.fillText(userLine, (viewW() - App.ctx.measureText(userLine).width) / 2, Input.touchMode ? 138 : 155);
+    App.ctx.fillText(userLine, (viewW() - App.ctx.measureText(userLine).width) / 2, 165);
 
-    drawXpBar(App.ctx, save, layout.pad, Input.touchMode ? 168 : 178, Math.min(320, viewW() - layout.pad * 2 - 140));
-    drawCoins(App.ctx, save, viewW() - layout.pad - 120, Input.touchMode ? 182 : 192);
+    drawXpBar(App.ctx, save, 80, 200, 280);
+    drawCoins(App.ctx, save, viewW() - 220, 215);
 
-    App.ctx.font = uiFont(Input.touchMode ? 22 : 28);
+    App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.text);
     const best = save.highScores[1] || 0;
     const hs = `HIGH SCORE: ${best}`;
-    App.ctx.fillText(hs, (viewW() - App.ctx.measureText(hs).width) / 2, Input.touchMode ? 228 : 248);
+    App.ctx.fillText(hs, (viewW() - App.ctx.measureText(hs).width) / 2, 270);
 
-    const labels = [
-      ["start", "START"],
-      ["levels", "LEVELS"],
-      ["infinite", "INFINITE"],
-      ["shop", "SHOP"],
-      ["settings", "SETTINGS"],
-      ["howto", "HOW TO PLAY"],
-    ];
-    let y = layout.top;
-    labels.forEach(([id, label]) => {
-      const small = id === "howto";
-      const rect = this.btn(id, label, null, y, null, layout.btnH);
-      drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), small);
-      y += layout.btnH + layout.gap;
-    });
+    drawNeonButton(App.ctx, this.btn("start", "START", null, this.menuBtnY(0)), "START", pointInRect(mousePos, this.buttons.start));
+    drawNeonButton(App.ctx, this.btn("levels", "LEVELS", null, this.menuBtnY(1)), "LEVELS", pointInRect(mousePos, this.buttons.levels));
+    drawNeonButton(App.ctx, this.btn("infinite", "INFINITE", null, this.menuBtnY(2)), "INFINITE", pointInRect(mousePos, this.buttons.infinite));
+    drawNeonButton(App.ctx, this.btn("shop", "SHOP", null, this.menuBtnY(3)), "SHOP", pointInRect(mousePos, this.buttons.shop));
+    drawNeonButton(App.ctx, this.btn("settings", "SETTINGS", null, this.menuBtnY(4)), "SETTINGS", pointInRect(mousePos, this.buttons.settings));
+    drawNeonButton(App.ctx, this.btn("howto", "HOW TO PLAY", null, this.menuBtnY(5)), "HOW TO PLAY", pointInRect(mousePos, this.buttons.howto), true);
 
     if (Input.touchMode) {
-      App.ctx.font = uiFont(14);
+      App.ctx.font = gameFont(16);
       App.ctx.fillStyle = rgb(COLORS.green);
       const mobileHint = "MOBILE — tap targets directly";
-      App.ctx.fillText(mobileHint, (viewW() - App.ctx.measureText(mobileHint).width) / 2, viewH() - 24);
+      App.ctx.fillText(mobileHint, (viewW() - App.ctx.measureText(mobileHint).width) / 2, viewH() - 40);
     }
     this.finishButtons();
   },
@@ -343,16 +320,13 @@ const Screens = {
 
     const playW = Input.touchMode ? viewW() - pad * 2 : 260;
     const playX = Input.touchMode ? pad : null;
-    const playH = btnHeight(Input.touchMode ? 56 : 56);
-    const backH = btnHeight(52);
-    const stackGap = this.buttonStackGap();
-    const backY = viewH() - (Input.touchMode ? 100 : 70);
-    const playY = backY - stackGap - playH;
-    const play = this.btn("infPlay", "PLAY", playX, playY, playW, playH);
+    const backY = viewH() - (Input.touchMode ? 90 : 70);
+    const playY = backY - btnHeight(Input.touchMode ? 56 : 56) - this.buttonStackGap();
+    const play = this.btn("infPlay", "PLAY", playX, playY, playW, btnHeight(Input.touchMode ? 56 : 56));
     drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
     drawNeonButton(
       App.ctx,
-      this.btn("back", "BACK", playX, backY, playW, backH),
+      this.btn("back", "BACK", playX, backY, playW, btnHeight(52)),
       "BACK",
       pointInRect(mousePos, this.buttons.back),
     );
