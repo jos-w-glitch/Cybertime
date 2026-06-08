@@ -2,6 +2,7 @@ const PwaInstall = {
   prompt: null,
 
   init() {
+    if (window.CYBERTIME_PORTAL === "crazygames") return;
     window.addEventListener("beforeinstallprompt", (e) => {
       e.preventDefault();
       this.prompt = e;

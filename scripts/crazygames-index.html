@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>CyberTime</title>
+  <meta name="description" content="CyberTime — rhythm timing game">
+  <meta name="cybertime-build" content="<!--BUILD_ID-->">
+  <base href="./">
+  <link rel="icon" type="image/png" href="assets/icon-192.png">
+  <script src="https://sdk.crazygames.com/crazygames-sdk-v2.js"></script>
+  <style>
+    @font-face {
+      font-family: "Cyberjunkies";
+      src: url("assets/fonts/Cyberjunkies.ttf") format("truetype");
+      font-weight: normal;
+      font-style: normal;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      width: 100%;
+      height: 100%;
+      height: 100dvh;
+      min-height: 100dvh;
+      overflow: hidden;
+      background: #0a0a12;
+      font-family: "Cyberjunkies", sans-serif;
+      touch-action: none;
+      overscroll-behavior: none;
+    }
+    body { display: flex; align-items: center; justify-content: center; }
+    html.mobile-device body.game-playing {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100dvh;
+    }
+    html.mobile-device body.game-playing #wrapper {
+      width: 100%;
+      height: 100dvh;
+    }
+    #wrapper {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+    #wrapper.session-active { pointer-events: auto; }
+    body.rotate-blocked #wrapper { pointer-events: none; }
+    #rotate-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 300;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(10, 10, 18, 0.96);
+      pointer-events: auto;
+    }
+    #rotate-overlay.hidden { display: none !important; pointer-events: none; }
+    .rotate-card { text-align: center; padding: 24px; }
+    .rotate-phone {
+      position: relative;
+      width: 72px;
+      height: 128px;
+      margin: 0 auto 28px;
+      border: 3px solid #00ffc8;
+      border-radius: 14px;
+      box-shadow: 0 0 24px rgba(0, 255, 200, 0.35);
+      animation: rotate-phone-hint 2s ease-in-out infinite;
+    }
+    .rotate-phone::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      left: 50%;
+      width: 28px;
+      height: 4px;
+      margin-left: -14px;
+      border-radius: 2px;
+      background: #00ffc8;
+      opacity: 0.7;
+    }
+    .rotate-phone::after {
+      content: "";
+      position: absolute;
+      bottom: 10px;
+      left: 50%;
+      width: 10px;
+      height: 10px;
+      margin-left: -5px;
+      border: 2px solid #00ffc8;
+      border-radius: 50%;
+      opacity: 0.5;
+    }
+    @keyframes rotate-phone-hint {
+      0%, 100% { transform: rotate(90deg); }
+      45%, 55% { transform: rotate(0deg); }
+    }
+    .rotate-text {
+      color: #00ffc8;
+      font-size: 1.5rem;
+      margin-bottom: 8px;
+      text-shadow: 0 0 12px rgba(0, 255, 200, 0.4);
+    }
+    .rotate-sub {
+      color: #8090a0;
+      font-size: 0.95rem;
+    }
+    canvas {
+      display: block;
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: min(100vh, calc(100vw * 9 / 16));
+      max-width: 100%;
+      max-height: 100%;
+      cursor: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    @media (pointer: coarse) {
+      canvas {
+        width: min(100vw, calc(100vh * 9 / 16));
+        height: min(100vh, calc(100vw * 16 / 9));
+        cursor: default;
+      }
+    }
+    #name-overlay {
+      position: fixed;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #0a0a12;
+      z-index: 100;
+      pointer-events: auto;
+    }
+    #name-overlay.hidden { display: none !important; pointer-events: none; }
+    #name-panel { width: min(440px, 94vw); padding: 28px 32px 36px; text-align: center; }
+    #login-title { color: #00b4ff; font-size: 1.4rem; margin-bottom: 12px; }
+    #login-title.hidden, #name-cancel.hidden, #name-panel p.hidden { display: none; }
+    #name-logo {
+      width: min(400px, 96%);
+      height: auto;
+      display: block;
+      margin: 0 auto 20px;
+      border-radius: 10px;
+      box-shadow: 0 0 32px rgba(255, 220, 0, 0.3);
+    }
+    #name-panel p { color: #00ffc8; margin-bottom: 20px; font-size: 0.95rem; line-height: 1.4; }
+    .name-input {
+      width: 100%;
+      padding: 14px 16px;
+      margin-bottom: 12px;
+      border: 2px solid #3c3c4b;
+      border-radius: 8px;
+      background: #12121c;
+      color: #00ffc8;
+      font-family: inherit;
+      font-size: 1.1rem;
+      outline: none;
+      text-align: center;
+    }
+    .name-input:focus { border-color: #00ffc8; }
+    #name-error { min-height: 22px; color: #ff0064; font-size: 0.9rem; margin-bottom: 8px; }
+    #name-play {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      background: #00b478;
+      color: #0a0a12;
+      font-family: inherit;
+      font-size: 1.1rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #name-cancel {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border: 2px solid #3c3c4b;
+      border-radius: 8px;
+      background: transparent;
+      color: #8090a0;
+      font-family: inherit;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #pin-hint { color: #8090a0; font-size: 0.85rem; margin-bottom: 12px; line-height: 1.35; }
+    #boot-status {
+      position: fixed;
+      left: 12px;
+      bottom: 12px;
+      color: #607080;
+      font-size: 12px;
+      z-index: 200;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="boot-status">Loading CyberTime…</div>
+  <div id="name-overlay" class="hidden">
+    <div id="name-panel">
+      <img id="name-logo" src="assets/logo.png" alt="CyberTime">
+      <div id="login-title" class="hidden">LOGIN</div>
+      <p>Save progress and compete on leaderboards.</p>
+      <div id="pin-hint">Name + PIN syncs your profile.</div>
+      <form id="name-form" action="#" onsubmit="return false;">
+        <input id="player-name" class="name-input" type="text" maxlength="16" autocomplete="username" placeholder="Your name">
+        <input id="player-pin" class="name-input" type="password" maxlength="4" inputmode="numeric" pattern="[0-9]*" autocomplete="current-password" placeholder="4-digit PIN">
+        <div id="name-error"></div>
+        <button id="name-play" type="button">LOGIN</button>
+        <button id="name-cancel" type="button" class="hidden">CANCEL</button>
+      </form>
+    </div>
+  </div>
+  <div id="rotate-overlay" class="hidden" aria-hidden="true">
+    <div class="rotate-card">
+      <div class="rotate-phone" aria-hidden="true"></div>
+      <p class="rotate-text">Rotate your phone</p>
+      <p class="rotate-sub">Portrait mode works best</p>
+    </div>
+  </div>
+  <div id="wrapper">
+    <canvas id="game" width="1280" height="720"></canvas>
+  </div>
+  <script>
+    window.CYBERTIME_PORTAL = "crazygames";
+    try { window.CrazyGames?.SDK?.game?.sdkGameLoadingStart?.(); } catch {}
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="game.bundle.js"></script>
+  <script>
+    if (typeof App === "undefined") {
+      document.getElementById("boot-status").textContent = "Failed to load game.bundle.js";
+      document.getElementById("name-error").textContent = "Game bundle failed to load.";
+    } else {
+      document.getElementById("boot-status").textContent = "";
+    }
+  </script>
+</body>
+</html>

@@ -30,6 +30,7 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/audio.js" \
     "$ROOT/js/game.js" \
     "$ROOT/js/share.js" \
+    "$ROOT/js/crazygames.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 

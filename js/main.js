@@ -114,6 +114,7 @@ const App = {
       AudioEngine.setVolumes(this.save.settings);
       Auth.hideNameScreen();
       this.sessionReady = true;
+      CrazyGamesSdk.loadingStop();
       if (this.state !== "game" || !this.game?.running) {
         this.state = this.state === "settings" ? "settings" : "menu";
       }
@@ -234,6 +235,7 @@ const App = {
   },
 
   goHome() {
+    CrazyGamesSdk.gameplayStop();
     MobileShell.exitPlayMode();
     this.game = null;
     this.pendingLevel = null;
@@ -273,6 +275,7 @@ const App = {
   },
 
   async launchGame(level) {
+    CrazyGamesSdk.gameplayStop();
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
@@ -284,6 +287,7 @@ const App = {
   beginGame(now) {
     if (!this.game || this.game.started) return;
     GameLogic.beginGame(this.game, now);
+    CrazyGamesSdk.gameplayStart();
   },
 
   startNextLevel() {
@@ -294,9 +298,11 @@ const App = {
 
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
+    CrazyGamesSdk.gameplayStop();
     this.game.endReason = reason;
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
+    if (this.game.lastRewards?.success) CrazyGamesSdk.happytime();
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     this.state = "gameover";

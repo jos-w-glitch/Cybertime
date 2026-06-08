@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "build": "bash scripts/build-deploy.sh",
+    "build:crazygames": "bash scripts/build-crazygames.sh",
     "cap:init": "bash scripts/setup-capacitor.sh",
     "cap:sync": "npx cap sync",
     "cap:android": "npx cap open android",
