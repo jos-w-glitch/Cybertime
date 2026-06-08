@@ -740,11 +740,18 @@ const Screens = {
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
       if (this._hit("share", pos)) {
-        Share.shareScore(App.game.score, App.game.level).then((result) => {
+        Share.shareScore(App.game).then((result) => {
           if (result === "copied") {
             Screens.shareFeedback = "Copied to clipboard!";
-            setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+          } else if (result === "downloaded") {
+            Screens.shareFeedback = "Replay video saved!";
+          } else if (result === "shared") {
+            Screens.shareFeedback = "Shared!";
+          } else {
+            Screens.shareFeedback = "";
+            return;
           }
+          setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
         });
         return true;
       }

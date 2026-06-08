@@ -1915,7 +1915,7 @@ function createStartTarget(level) {
 }
 
 function createGame(level, now) {
-  return {
+  const game = {
     level,
     infinite: !!level.infinite,
     started: false,
@@ -1940,6 +1940,8 @@ function createGame(level, now) {
     purpleTapMain: 0,
     purpleTapPartner: 0,
   };
+  Replay.attach(game);
+  return game;
 }
 const AudioEngine = {
   ctx: null,
@@ -2168,6 +2170,8 @@ const GameLogic = {
     game.graceUntil = now + 1500;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
+    Replay.markStart(game, now);
+    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     if (!game.infinite) {
       game.timeLimit = STAGE_TIME_SECONDS;
       game.stageEndAt = now + STAGE_TIME_SECONDS * 1000;
@@ -2349,7 +2353,7 @@ const GameLogic = {
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, main.x, main.y, COLORS.green, points));
     AudioEngine.playHit();
-    this._advanceTarget(game, main, COLORS.purple, now);
+    this._advanceTarget(game, main, COLORS.purple, now, game.combo + 1);
     if (partner) game.flippedTargets.push(new FlippedTarget(partner.x, partner.y, partner.radius, COLORS.purple));
   },
 
@@ -2372,7 +2376,7 @@ const GameLogic = {
     const points = game.combo + 1;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
-    this._advanceTarget(game, target, COLORS.purple, now);
+    this._advanceTarget(game, target, COLORS.purple, now, points);
   },
 
   _resetPurplePair(game) {
@@ -2456,7 +2460,7 @@ const GameLogic = {
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
-    this._advanceTarget(game, target, COLORS.orange, now);
+    this._advanceTarget(game, target, COLORS.orange, now, points);
   },
 
   _handleOrange(game, action, now) {
@@ -2484,7 +2488,7 @@ const GameLogic = {
     const points = game.combo + 2;
     game.floatingTexts.push(new FloatingText(`+${points}`, target.x, target.y, COLORS.green, points));
     AudioEngine.playHit();
-    this._advanceTarget(game, target, COLORS.orange, now);
+    this._advanceTarget(game, target, COLORS.orange, now, points);
   },
 
   _resolveHit(game, action, now) {
@@ -2511,21 +2515,25 @@ const GameLogic = {
     if (target.defused) target.defused = false;
     this._resetPurplePair(game);
     game.combo = 0;
+    Replay.logMiss(game, target.x, target.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", target.x, target.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
 
-  _advanceTarget(game, target, color, now) {
+  _advanceTarget(game, target, color, now, points = game.combo) {
     this._resetPurplePair(game);
     game.flippedTargets.push(new FlippedTarget(target.x, target.y, target.radius, color));
+    Replay.logHit(game, target, points, game.combo, now);
     game.currentTarget = game.nextTarget;
     game.currentTarget.activate(now);
     this._syncPurplePair(game, now);
+    Replay.logSpawn(game, game.currentTarget, now, game.purplePartner);
     game.nextTarget = new Target(game.level, shouldSpawnSlider(game.level));
   },
 
   _registerMiss(game, pos) {
     game.combo = 0;
+    Replay.logMiss(game, pos.x, pos.y, performance.now());
     game.floatingTexts.push(new FloatingText("-1", pos.x, pos.y, COLORS.red, -1));
     AudioEngine.playMiss();
   },
@@ -2576,6 +2584,7 @@ const GameLogic = {
     game.running = false;
     AudioEngine.stopMusic();
     game.lastRewards = finishGameRewards(save, game);
+    Replay.finalize(game, game.lastRewards?.success);
     if (game.level.infinite) {
       updateInfiniteHighScore(save, musicLevelId(game.level), game.score);
     } else {
@@ -2638,9 +2647,106 @@ const GameLogic = {
     ctx.fillText(hint, (viewW() - ctx.measureText(hint).width) / 2, viewH() - 40);
   },
 };
+const REPLAY_VERSION = 1;
+const REPLAY_CLIP_MS = 12000;
+const REPLAY_OUTRO_MS = 2500;
+
+const Replay = {
+  attach(game) {
+    game.replay = {
+      version: REPLAY_VERSION,
+      w: viewW(),
+      h: viewH(),
+      startedAt: 0,
+      events: [],
+    };
+  },
+
+  markStart(game, now) {
+    if (!game?.replay) return;
+    game.replay.startedAt = now;
+    game.replay.w = viewW();
+    game.replay.h = viewH();
+  },
+
+  time(game, now) {
+    if (!game?.replay?.startedAt) return 0;
+    return Math.max(0, now - game.replay.startedAt);
+  },
+
+  logSpawn(game, target, now, partner = null) {
+    if (!game?.replay?.startedAt) return;
+    const event = {
+      t: this.time(game, now),
+      type: "spawn",
+      targetType: target.type,
+      x: Math.round(target.x),
+      y: Math.round(target.y),
+      r: Math.round(target.radius),
+      slider: !!target.isSlider,
+      velX: target.isSlider ? target.velX : 0,
+      hitZoneX: Math.round(target.hitZoneX),
+    };
+    if (partner) {
+      event.partner = {
+        x: Math.round(partner.x),
+        y: Math.round(partner.y),
+        r: Math.round(partner.radius),
+      };
+    }
+    game.replay.events.push(event);
+  },
+
+  logHit(game, target, points, combo, now) {
+    if (!game?.replay?.startedAt) return;
+    game.replay.events.push({
+      t: this.time(game, now),
+      type: "hit",
+      x: Math.round(target.x),
+      y: Math.round(target.y),
+      targetType: target.type,
+      points,
+      combo,
+    });
+  },
+
+  logMiss(game, x, y, now) {
+    if (!game?.replay?.startedAt) return;
+    game.replay.events.push({
+      t: this.time(game, now),
+      type: "miss",
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+  },
+
+  finalize(game, success) {
+    const replay = game?.replay;
+    if (!replay) return null;
+
+    replay.score = game.score;
+    replay.success = !!success;
+    replay.levelId = game.level.id;
+    replay.levelName = game.level.name;
+    replay.infinite = !!game.infinite;
+    replay.comboPeak = game.comboPeak;
+
+    const lastT = replay.events.length ? replay.events[replay.events.length - 1].t : 0;
+    replay.clipStartMs = Math.max(0, lastT - REPLAY_CLIP_MS);
+    replay.clipDurationMs = lastT - replay.clipStartMs + REPLAY_OUTRO_MS;
+    replay.durationMs = replay.clipDurationMs;
+    return replay;
+  },
+
+  forShare(game) {
+    return game?.replay || null;
+  },
+};
 const SHARE_GAME_URL = "https://www.joseph-weiss.com/cybertime/";
 
 const Share = {
+  _renderer: null,
+
   buildMessage(score, level) {
     if (level?.infinite) {
       return `I got ${score} points in CyberTime Infinite! Can you beat me?`;
@@ -2648,8 +2754,22 @@ const Share = {
     return `I got ${score} points in CyberTime! Can you beat me?`;
   },
 
-  async shareScore(score, level) {
-    const message = this.buildMessage(score, level);
+  async loadRenderer() {
+    if (this._renderer) return this._renderer;
+    this._renderer = await import("./replay/replay-render.js");
+    return this._renderer;
+  },
+
+  downloadBlob(blob, name) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = name;
+    link.click();
+    URL.revokeObjectURL(url);
+  },
+
+  async shareText(message) {
     const payload = `${message}\n${SHARE_GAME_URL}`;
 
     if (navigator.share) {
@@ -2669,6 +2789,35 @@ const Share = {
     }
 
     return null;
+  },
+
+  async shareScore(game) {
+    const score = game?.score ?? 0;
+    const level = game?.level;
+    const message = this.buildMessage(score, level);
+    const replay = Replay.forShare(game);
+
+    if (replay?.events?.length) {
+      try {
+        Screens.shareFeedback = "Creating replay...";
+        const renderer = await this.loadRenderer();
+        const supported = await renderer.canRenderReplayVideo();
+        if (supported) {
+          const blob = await renderer.renderCyberTimeReplay(replay);
+          const file = new File([blob], "cybertime-replay.mp4", { type: "video/mp4" });
+          if (navigator.share && navigator.canShare?.({ files: [file] })) {
+            await navigator.share({ title: "CyberTime", text: message, files: [file] });
+            return "shared";
+          }
+          this.downloadBlob(blob, "cybertime-replay.mp4");
+          return "downloaded";
+        }
+      } catch (err) {
+        console.warn("Remotion replay render failed", err);
+      }
+    }
+
+    return this.shareText(message);
   },
 };
 const Screens = {
@@ -3413,11 +3562,18 @@ const Screens = {
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
       if (this._hit("share", pos)) {
-        Share.shareScore(App.game.score, App.game.level).then((result) => {
+        Share.shareScore(App.game).then((result) => {
           if (result === "copied") {
             Screens.shareFeedback = "Copied to clipboard!";
-            setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+          } else if (result === "downloaded") {
+            Screens.shareFeedback = "Replay video saved!";
+          } else if (result === "shared") {
+            Screens.shareFeedback = "Shared!";
+          } else {
+            Screens.shareFeedback = "";
+            return;
           }
+          setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
         });
         return true;
       }

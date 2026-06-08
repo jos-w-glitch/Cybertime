@@ -420,7 +420,7 @@ function createStartTarget(level) {
 }
 
 function createGame(level, now) {
-  return {
+  const game = {
     level,
     infinite: !!level.infinite,
     started: false,
@@ -445,4 +445,6 @@ function createGame(level, now) {
     purpleTapMain: 0,
     purpleTapPartner: 0,
   };
+  Replay.attach(game);
+  return game;
 }
