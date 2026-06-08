@@ -5,6 +5,9 @@ const defaultSave = () => ({
   highScores: {},
   infiniteHighScores: {},
   clearedLevels: [],
+  clearedCommunity: [],
+  communityHighScores: {},
+  creatorBackgrounds: [],
   leaderboards: {},
   leaderboardRewards: {},
   ownedSkins: ["default"],
@@ -27,6 +30,9 @@ function normalizeSave(raw) {
   if (!data.leaderboards || typeof data.leaderboards !== "object") data.leaderboards = {};
   if (!data.leaderboardRewards || typeof data.leaderboardRewards !== "object") data.leaderboardRewards = {};
   if (!Array.isArray(data.clearedLevels)) data.clearedLevels = [];
+  if (!Array.isArray(data.clearedCommunity)) data.clearedCommunity = [];
+  if (!data.communityHighScores || typeof data.communityHighScores !== "object") data.communityHighScores = {};
+  if (!Array.isArray(data.creatorBackgrounds)) data.creatorBackgrounds = [];
   if (!Array.isArray(data.ownedSkins)) data.ownedSkins = base.ownedSkins;
   if (!Array.isArray(data.ownedBackgrounds)) data.ownedBackgrounds = base.ownedBackgrounds;
   if (!data.settings || typeof data.settings !== "object") data.settings = { ...base.settings };
@@ -215,6 +221,33 @@ function finishGameRewards(save, game) {
     };
   }
 
+  if (level.community) {
+    const timedOut = game.endReason === "time";
+    const success = timedOut && (game.hearts ?? 0) > 0;
+    const isTest = level.communityId === "test";
+    let rewardUnlocked = false;
+    if (!isTest) updateCommunityHighScore(save, level.communityId, score);
+    if (success && !isTest) {
+      const hadReward = save.creatorBackgrounds?.some((b) => b.id === level.rewardBgId);
+      unlockCommunityReward(save, level);
+      rewardUnlocked = !hadReward;
+    }
+    const coinGain = calcCoinGain(score, success);
+    save.xp += xpGain;
+    save.coins += coinGain;
+    writeSave(save);
+    return {
+      community: true,
+      success,
+      rewardUnlocked,
+      rewardName: level.rewardName,
+      xpGain,
+      coinGain,
+      passScore: 0,
+      needed: 0,
+    };
+  }
+
   let stageXp = 0;
   let cleared = false;
   let unlockedNext = false;
@@ -300,6 +333,14 @@ function purchaseItem(save, price, collection, id) {
   save[collection].push(id);
   writeSave(save);
   return { ok: true };
+}
+
+function updateCommunityHighScore(save, levelId, score) {
+  if (!save.communityHighScores) save.communityHighScores = {};
+  const prev = save.communityHighScores[levelId] || 0;
+  if (score <= prev) return false;
+  save.communityHighScores[levelId] = score;
+  return true;
 }
 
 function updateHighScore(save, levelId, score) {

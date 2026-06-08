@@ -142,10 +142,11 @@ const GameLogic = {
     }
 
     const result = game.currentTarget.checkClick(pos);
-    if (result === "MISS" || result === "SAFE_ZONE") {
+    if (result === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (result === "SAFE_ZONE") return;
     if (result !== "HIT") return;
 
     if (Input.touchMode && game.currentTarget.type === "ORANGE") {
@@ -173,11 +174,11 @@ const GameLogic = {
     const mainHit = main.checkClick(pos);
     const partnerHit = partner.checkClick(pos);
 
-    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") {
-      this._resetPurplePair(game);
+    if (mainHit === "MISS" && partnerHit === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") return;
     if (mainHit !== "HIT" && partnerHit !== "HIT") return;
 
     if (mainHit === "HIT" && !game.purpleTapMain) {
@@ -211,10 +212,11 @@ const GameLogic = {
   _handleDesktopPurple(game, button, pos, now) {
     const target = game.currentTarget;
     const hit = target.checkClick(pos);
-    if (hit === "SAFE_ZONE") {
+    if (hit === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (hit === "SAFE_ZONE") return;
     if (hit !== "HIT") return;
 
     if (Input.resolveButton(button) !== "purple") {
@@ -378,9 +380,17 @@ const GameLogic = {
   _registerMiss(game, pos) {
     game.combo = 0;
     game.lastGoldenCombo = 0;
-    game.floatingTexts.push(new FloatingText(game.infinite ? "MISS" : "-1", pos.x, pos.y, COLORS.red, 0));
+    game.floatingTexts.push(new FloatingText("-1 ♥", pos.x, pos.y, COLORS.red, 0));
     AudioEngine.playMiss();
     game.hearts -= 1;
+  },
+
+  _failFromExplosion(game, target) {
+    game.hearts = 0;
+    game.combo = 0;
+    game.lastGoldenCombo = 0;
+    game.floatingTexts.push(new FloatingText("BOOM!", target.x, target.y - 24, COLORS.red, 0));
+    AudioEngine.playMiss();
   },
 
   _skipExpiredTarget(game, now) {
@@ -422,18 +432,19 @@ const GameLogic = {
     }
     if (game.hearts <= 0) return "hearts";
 
-    if (game.currentTarget.isOffScreen) {
-      game.hearts -= 1;
-      if (game.hearts <= 0) return "hearts";
-      this._skipExpiredTarget(game, now);
+    const target = game.currentTarget;
+    if (target.isOffScreen) {
+      this._failFromExplosion(game, target);
+      return "exploded";
+    }
+    if (game.purplePartner?.isActive && game.purplePartner.isExpired(now)) {
+      this._failFromExplosion(game, target);
+      return "exploded";
     }
     if (!game.graceUntil || now > game.graceUntil) {
-      if (game.currentTarget.isExpired(now)) {
-        game.combo = 0;
-        game.lastGoldenCombo = 0;
-        game.hearts -= 1;
-        if (game.hearts <= 0) return "hearts";
-        this._skipExpiredTarget(game, now);
+      if (target.isExpired(now)) {
+        this._failFromExplosion(game, target);
+        return "exploded";
       }
     }
 
@@ -463,7 +474,7 @@ const GameLogic = {
     game.lastRewards = finishGameRewards(save, game);
     if (game.level.infinite) {
       updateInfiniteHighScore(save, musicLevelId(game.level), game.score);
-    } else {
+    } else if (!game.level.community) {
       updateHighScore(save, game.level.id, game.score);
     }
     return game.lastRewards;

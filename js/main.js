@@ -29,6 +29,7 @@ const App = {
     UiIcons.load();
     this.bindEvents();
     this.bindNameForm();
+    this.bindCreatorMusic();
 
     Auth.init(() => this.startSession());
 
@@ -79,6 +80,19 @@ const App = {
     Auth.updatePinHint("");
   },
 
+  bindCreatorMusic() {
+    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await CreatorStore.attachMusic(file);
+      } catch (err) {
+        console.error(err);
+      }
+      e.target.value = "";
+    });
+  },
+
   tryLogin() {
     const name = document.getElementById("player-name")?.value || "";
     const pin = document.getElementById("player-pin")?.value || "";
@@ -111,6 +125,7 @@ const App = {
       Input.save = this.save;
       this.stars = createStars();
       AudioEngine.setVolumes(this.save.settings);
+      CreatorStore.init().catch(() => {});
       Auth.hideNameScreen();
       this.sessionReady = true;
       if (this.state !== "game" || !this.game?.running) {
@@ -188,6 +203,9 @@ const App = {
       if (this.state === "shop" && Screens.draggingBgSlider) {
         Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
       }
+      if (this.state === "creator" && CreatorUi.draggingRewardSlider) {
+        CreatorUi._handleRewardSliderDrag(CreatorStore.draft(), Input.mousePos);
+      }
     });
 
     canvas.addEventListener("pointerup", (e) => {
@@ -199,6 +217,7 @@ const App = {
       }
       Screens.draggingSlider = false;
       Screens.draggingBgSlider = false;
+      CreatorUi.draggingRewardSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {
@@ -224,7 +243,7 @@ const App = {
     });
 
     window.addEventListener("wheel", (e) => {
-      if (App.state === "levels" || App.state === "shop") {
+      if (App.state === "levels" || App.state === "shop" || App.state === "creator") {
         Screens.scrollList(e.deltaY * 0.6);
         e.preventDefault();
       }
@@ -298,9 +317,15 @@ const App = {
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
     this.game.endReason = reason;
-    this.game.failMessage = reason === "hearts" ? "OUT OF HEARTS" : pickFailMessage();
+    this.game.failMessage = reason === "hearts"
+      ? "OUT OF HEARTS"
+      : reason === "exploded"
+        ? "TARGET EXPLODED"
+        : reason === "timing"
+          ? "TOO SLOW"
+          : pickFailMessage();
     GameLogic.finish(this.game, this.save);
-    refreshLeaderboard(this.game.level.id);
+    if (!this.game.level.community) refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     this.state = "gameover";
   },
@@ -343,6 +368,9 @@ const App = {
         this.renderCursor(this.save);
       } else if (this.state === "levels") {
         Screens.drawLevels(this.save, mousePos, now);
+        this.renderCursor(this.save);
+      } else if (this.state === "creator") {
+        CreatorUi.drawCreator(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "infinite") {
         Screens.drawInfiniteSelect(this.save, mousePos, now);

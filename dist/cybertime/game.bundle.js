@@ -235,7 +235,9 @@ const HOW_TO_LINES = [
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",
   "Build COMBO for bigger score & XP",
-  "Beat the GOAL score before time runs out (30s)",
+  "Miss the beat = target explodes — all hearts lost!",
+  "Click OUTSIDE targets costs one heart",
+  "Survive 30 seconds with hearts left to clear a stage",
   "INFINITE mode — pick track + mechanics, survive!",
   "Earn COINS — clear stages for the best payout",
 ];
@@ -251,7 +253,9 @@ const HOW_TO_LINES_MOBILE = [
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",
   "Build COMBO for bigger score & XP",
-  "Beat the GOAL score before time runs out (30s)",
+  "Miss the beat = target explodes — all hearts lost!",
+  "Tap OUTSIDE targets costs one heart",
+  "Survive 30 seconds with hearts left to clear a stage",
 ];
 
 function getHowToLines() {
@@ -381,7 +385,14 @@ function getSkinById(id) {
 }
 
 function getBackgroundById(id) {
+  const save = Input?.save || App?.save;
+  const custom = save?.creatorBackgrounds?.find((b) => b.id === id);
+  if (custom) return custom;
   return BACKGROUNDS.find((b) => b.id === id) || BACKGROUNDS[0];
+}
+
+function listShopBackgrounds(save) {
+  return [...BACKGROUNDS, ...(save?.creatorBackgrounds || [])];
 }
 
 function getTutorial(key) {
@@ -682,6 +693,9 @@ const defaultSave = () => ({
   highScores: {},
   infiniteHighScores: {},
   clearedLevels: [],
+  clearedCommunity: [],
+  communityHighScores: {},
+  creatorBackgrounds: [],
   leaderboards: {},
   leaderboardRewards: {},
   ownedSkins: ["default"],
@@ -704,6 +718,9 @@ function normalizeSave(raw) {
   if (!data.leaderboards || typeof data.leaderboards !== "object") data.leaderboards = {};
   if (!data.leaderboardRewards || typeof data.leaderboardRewards !== "object") data.leaderboardRewards = {};
   if (!Array.isArray(data.clearedLevels)) data.clearedLevels = [];
+  if (!Array.isArray(data.clearedCommunity)) data.clearedCommunity = [];
+  if (!data.communityHighScores || typeof data.communityHighScores !== "object") data.communityHighScores = {};
+  if (!Array.isArray(data.creatorBackgrounds)) data.creatorBackgrounds = [];
   if (!Array.isArray(data.ownedSkins)) data.ownedSkins = base.ownedSkins;
   if (!Array.isArray(data.ownedBackgrounds)) data.ownedBackgrounds = base.ownedBackgrounds;
   if (!data.settings || typeof data.settings !== "object") data.settings = { ...base.settings };
@@ -892,6 +909,33 @@ function finishGameRewards(save, game) {
     };
   }
 
+  if (level.community) {
+    const timedOut = game.endReason === "time";
+    const success = timedOut && (game.hearts ?? 0) > 0;
+    const isTest = level.communityId === "test";
+    let rewardUnlocked = false;
+    if (!isTest) updateCommunityHighScore(save, level.communityId, score);
+    if (success && !isTest) {
+      const hadReward = save.creatorBackgrounds?.some((b) => b.id === level.rewardBgId);
+      unlockCommunityReward(save, level);
+      rewardUnlocked = !hadReward;
+    }
+    const coinGain = calcCoinGain(score, success);
+    save.xp += xpGain;
+    save.coins += coinGain;
+    writeSave(save);
+    return {
+      community: true,
+      success,
+      rewardUnlocked,
+      rewardName: level.rewardName,
+      xpGain,
+      coinGain,
+      passScore: 0,
+      needed: 0,
+    };
+  }
+
   let stageXp = 0;
   let cleared = false;
   let unlockedNext = false;
@@ -977,6 +1021,14 @@ function purchaseItem(save, price, collection, id) {
   save[collection].push(id);
   writeSave(save);
   return { ok: true };
+}
+
+function updateCommunityHighScore(save, levelId, score) {
+  if (!save.communityHighScores) save.communityHighScores = {};
+  const prev = save.communityHighScores[levelId] || 0;
+  if (score <= prev) return false;
+  save.communityHighScores[levelId] = score;
+  return true;
 }
 
 function updateHighScore(save, levelId, score) {
@@ -1189,6 +1241,16 @@ function defaultBgTuning() {
 }
 
 function resolveBackground(save) {
+  const level = App?.game?.level;
+  if (level?.playBg) {
+    return {
+      id: level.rewardBgId || "play",
+      name: level.rewardName || "",
+      bg: level.playBg.bg,
+      grid: level.playBg.grid,
+      accent: level.playBg.accent,
+    };
+  }
   const theme = getBackgroundById(save.equippedBackground);
   const t = { ...defaultBgTuning(), ...save.bgTuning };
   const scale = (rgb, factor) => rgb.map((c) => Math.round(c * (0.12 + 0.88 * factor)));
@@ -1424,6 +1486,20 @@ function drawCursor(ctx, pos, skin) {
     ctx.fill();
   }
   ctx.restore();
+}
+
+function drawUiPanel(ctx, rect) {
+  ctx.fillStyle = "rgba(10, 10, 20, 0.78)";
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+  ctx.fill();
+  ctx.strokeStyle = rgb(COLORS.blue, 0.45);
+  ctx.lineWidth = 2;
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+  ctx.stroke();
+  ctx.strokeStyle = rgb(COLORS.green, 0.12);
+  ctx.lineWidth = 1;
+  roundRect(ctx, rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8, 12);
+  ctx.stroke();
 }
 
 function drawNeonButton(ctx, rect, label, hovered, small = false) {
@@ -2185,10 +2261,14 @@ const AudioEngine = {
     this.mode = "level";
     this.playing = true;
     this.resetMusicVolume();
-    this._playMusicFile(MUSIC_LEVEL(level), null, () => {
-      if (level.musicId === "track1") this._playMusicFile(null, MENU_MUSIC_FALLBACK);
-      else if (this.ctx) this._playProceduralTrack(level.musicId, level.bpm);
-    });
+    if (level.communityMusicUrl) {
+      this._playBlobUrl(level.communityMusicUrl);
+    } else {
+      this._playMusicFile(MUSIC_LEVEL(level), null, () => {
+        if (level.musicId === "track1") this._playMusicFile(null, MENU_MUSIC_FALLBACK);
+        else if (this.ctx) this._playProceduralTrack(level.musicId, level.bpm);
+      });
+    }
     const beatMs = 60000 / level.bpm;
     let beat = 0;
     this.onBeat?.(beat);
@@ -2197,6 +2277,25 @@ const AudioEngine = {
       beat += 1;
       this.onBeat?.(beat);
     }, beatMs);
+  },
+
+  _playBlobUrl(url) {
+    const audio = new Audio(url);
+    audio.loop = true;
+    audio.play().then(() => {
+      this.mp3Audio = audio;
+      if (this.ctx && this.musicGain) {
+        try {
+          const track = this.ctx.createMediaElementSource(audio);
+          track.connect(this.musicGain);
+          this.musicNodes.push(track);
+        } catch {
+          audio.volume = this.baseMusicVolume;
+        }
+      } else {
+        audio.volume = this.baseMusicVolume;
+      }
+    }).catch(() => {});
   },
 
   _playMusicFile(basePath, fallback, onFail) {
@@ -2466,10 +2565,11 @@ const GameLogic = {
     }
 
     const result = game.currentTarget.checkClick(pos);
-    if (result === "MISS" || result === "SAFE_ZONE") {
+    if (result === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (result === "SAFE_ZONE") return;
     if (result !== "HIT") return;
 
     if (Input.touchMode && game.currentTarget.type === "ORANGE") {
@@ -2497,11 +2597,11 @@ const GameLogic = {
     const mainHit = main.checkClick(pos);
     const partnerHit = partner.checkClick(pos);
 
-    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") {
-      this._resetPurplePair(game);
+    if (mainHit === "MISS" && partnerHit === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (mainHit === "SAFE_ZONE" || partnerHit === "SAFE_ZONE") return;
     if (mainHit !== "HIT" && partnerHit !== "HIT") return;
 
     if (mainHit === "HIT" && !game.purpleTapMain) {
@@ -2535,10 +2635,11 @@ const GameLogic = {
   _handleDesktopPurple(game, button, pos, now) {
     const target = game.currentTarget;
     const hit = target.checkClick(pos);
-    if (hit === "SAFE_ZONE") {
+    if (hit === "MISS") {
       this._registerMiss(game, pos);
       return;
     }
+    if (hit === "SAFE_ZONE") return;
     if (hit !== "HIT") return;
 
     if (Input.resolveButton(button) !== "purple") {
@@ -2702,9 +2803,17 @@ const GameLogic = {
   _registerMiss(game, pos) {
     game.combo = 0;
     game.lastGoldenCombo = 0;
-    game.floatingTexts.push(new FloatingText(game.infinite ? "MISS" : "-1", pos.x, pos.y, COLORS.red, 0));
+    game.floatingTexts.push(new FloatingText("-1 ♥", pos.x, pos.y, COLORS.red, 0));
     AudioEngine.playMiss();
     game.hearts -= 1;
+  },
+
+  _failFromExplosion(game, target) {
+    game.hearts = 0;
+    game.combo = 0;
+    game.lastGoldenCombo = 0;
+    game.floatingTexts.push(new FloatingText("BOOM!", target.x, target.y - 24, COLORS.red, 0));
+    AudioEngine.playMiss();
   },
 
   _skipExpiredTarget(game, now) {
@@ -2746,18 +2855,19 @@ const GameLogic = {
     }
     if (game.hearts <= 0) return "hearts";
 
-    if (game.currentTarget.isOffScreen) {
-      game.hearts -= 1;
-      if (game.hearts <= 0) return "hearts";
-      this._skipExpiredTarget(game, now);
+    const target = game.currentTarget;
+    if (target.isOffScreen) {
+      this._failFromExplosion(game, target);
+      return "exploded";
+    }
+    if (game.purplePartner?.isActive && game.purplePartner.isExpired(now)) {
+      this._failFromExplosion(game, target);
+      return "exploded";
     }
     if (!game.graceUntil || now > game.graceUntil) {
-      if (game.currentTarget.isExpired(now)) {
-        game.combo = 0;
-        game.lastGoldenCombo = 0;
-        game.hearts -= 1;
-        if (game.hearts <= 0) return "hearts";
-        this._skipExpiredTarget(game, now);
+      if (target.isExpired(now)) {
+        this._failFromExplosion(game, target);
+        return "exploded";
       }
     }
 
@@ -2787,7 +2897,7 @@ const GameLogic = {
     game.lastRewards = finishGameRewards(save, game);
     if (game.level.infinite) {
       updateInfiniteHighScore(save, musicLevelId(game.level), game.score);
-    } else {
+    } else if (!game.level.community) {
       updateHighScore(save, game.level.id, game.score);
     }
     return game.lastRewards;
@@ -3004,6 +3114,517 @@ const Share = {
     return result || "failed";
   },
 };
+const CREATOR_DB = "cybertime-creator";
+const CREATOR_MUSIC_MAX = 8 * 1024 * 1024;
+
+const CreatorStore = {
+  _levels: [],
+  _musicUrls: new Map(),
+  _draft: null,
+
+  draft() {
+    if (!this._draft) this._draft = defaultCreatorDraft();
+    return this._draft;
+  },
+
+  resetDraft() {
+    this._draft = defaultCreatorDraft();
+    return this._draft;
+  },
+
+  async init() {
+    await this._loadAll();
+  },
+
+  list() {
+    return this._levels.slice().sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  async saveDraft() {
+    const draft = { ...this._draft };
+    const pendingMusic = draft._pendingMusic;
+    delete draft._pendingMusic;
+    if (!draft.id) draft.id = `c_${Date.now()}`;
+    draft.createdAt = Date.now();
+    draft.author = Auth.displayName || "Guest";
+    if (pendingMusic) {
+      await this._putMusic(draft.id, pendingMusic);
+      draft.hasMusic = true;
+    }
+    await this._putLevel(draft);
+    await this._loadAll();
+    this._draft = null;
+    return draft.id;
+  },
+
+  async attachMusic(file) {
+    if (!file || file.size > CREATOR_MUSIC_MAX) throw new Error("Music too large (max 8MB)");
+    const draft = this.draft();
+    if (!draft._pendingMusic) draft._pendingMusic = file;
+    else draft._pendingMusic = file;
+    draft.hasMusic = true;
+  },
+
+  async getMusicUrl(levelId) {
+    if (this._musicUrls.has(levelId)) return this._musicUrls.get(levelId);
+    const blob = await this._getMusic(levelId);
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    this._musicUrls.set(levelId, url);
+    return url;
+  },
+
+  async deleteLevel(id) {
+    await this._deleteLevel(id);
+    const url = this._musicUrls.get(id);
+    if (url) URL.revokeObjectURL(url);
+    this._musicUrls.delete(id);
+    await this._loadAll();
+  },
+
+  _openDb() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(CREATOR_DB, 1);
+      req.onupgradeneeded = () => {
+        req.result.createObjectStore("levels");
+        req.result.createObjectStore("music");
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async _loadAll() {
+    const db = await this._openDb();
+    this._levels = await new Promise((resolve, reject) => {
+      const tx = db.transaction("levels", "readonly");
+      const req = tx.objectStore("levels").getAll();
+      req.onsuccess = () => resolve(req.result || []);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async _putLevel(level) {
+    const db = await this._openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("levels", "readwrite");
+      tx.objectStore("levels").put(level, level.id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async _putMusic(levelId, file) {
+    const db = await this._openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction("music", "readwrite");
+      tx.objectStore("music").put(file, levelId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+
+  async _getMusic(levelId) {
+    const db = await this._openDb();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("music", "readonly");
+      const req = tx.objectStore("music").get(levelId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
+    });
+  },
+
+  async _deleteLevel(id) {
+    const db = await this._openDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(["levels", "music"], "readwrite");
+      tx.objectStore("levels").delete(id);
+      tx.objectStore("music").delete(id);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => reject(tx.error);
+    });
+  },
+};
+
+function defaultCreatorDraft() {
+  return {
+    id: null,
+    name: "MY STAGE",
+    bpm: 96,
+    hitWindowMs: 2200,
+    bombFuse: 4,
+    mechanicIndex: 1,
+    rewardName: "STAGE REWARD",
+    rewardBg: [18, 8, 32],
+    rewardGrid: [60, 30, 90],
+    rewardAccent: [255, 80, 180],
+    hasMusic: false,
+    createdAt: 0,
+    author: "",
+  };
+}
+
+function applyCreatorDraftToLevel(meta, musicUrl) {
+  const preset = INFINITE_MECHANIC_PRESETS[meta.mechanicIndex ?? 0] || INFINITE_MECHANIC_PRESETS[0];
+  const rewardId = `creator-bg-${meta.id}`;
+  return {
+    id: meta.id,
+    communityId: meta.id,
+    community: true,
+    communityMusicUrl: musicUrl || null,
+    name: meta.name,
+    bpm: meta.bpm,
+    hitWindowMs: meta.hitWindowMs,
+    bombFuse: meta.bombFuse,
+    duration: 30,
+    sliders: preset.sliders,
+    allowRed: preset.red,
+    allowOrange: preset.orange,
+    allowPurple: preset.purple,
+    sliderRed: preset.sliderRed,
+    redChance: preset.red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
+    orangeChance: preset.orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
+    purpleChance: preset.purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
+    sliderChance: preset.sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
+    sliderRedChance: preset.sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
+    passScore: 0,
+    clearXp: 0,
+    tutorial: null,
+    featureHint: `Community — ${meta.author || "Creator"}`,
+    rewardBgId: rewardId,
+    rewardName: meta.rewardName,
+    rewardBg: meta.rewardBg,
+    rewardGrid: meta.rewardGrid,
+    rewardAccent: meta.rewardAccent,
+    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent },
+  };
+}
+
+function unlockCommunityReward(save, level) {
+  if (!level?.community || !level.rewardBgId) return;
+  const bg = {
+    id: level.rewardBgId,
+    name: level.rewardName || "COMMUNITY BG",
+    bg: level.rewardBg,
+    grid: level.rewardGrid,
+    accent: level.rewardAccent,
+    price: 0,
+  };
+  if (!save.creatorBackgrounds) save.creatorBackgrounds = [];
+  if (!save.creatorBackgrounds.some((b) => b.id === bg.id)) save.creatorBackgrounds.push(bg);
+  if (!save.ownedBackgrounds.includes(bg.id)) save.ownedBackgrounds.push(bg.id);
+  if (!save.clearedCommunity) save.clearedCommunity = [];
+  if (!save.clearedCommunity.includes(level.communityId)) save.clearedCommunity.push(level.communityId);
+}
+
+function cycleCreatorBpm(draft, delta) {
+  const steps = [72, 84, 96, 104, 112, 122, 128, 136, 142, 152, 160, 168];
+  const idx = steps.findIndex((b) => b >= draft.bpm);
+  const i = Math.max(0, (idx < 0 ? 0 : idx) + delta);
+  draft.bpm = steps[Math.max(0, Math.min(steps.length - 1, i))];
+}
+
+function cycleCreatorMechanics(draft, delta) {
+  const next = ((draft.mechanicIndex ?? 0) + delta + INFINITE_MECHANIC_PRESETS.length) % INFINITE_MECHANIC_PRESETS.length;
+  draft.mechanicIndex = next;
+}
+const CreatorUi = {
+  levelsTab: "main",
+  rewardSliders: null,
+  draggingRewardSlider: false,
+
+  drawMenuSlot(slot, mousePos) {
+    Screens.drawMenuSlot("creator", "CREATOR", slot, mousePos);
+  },
+
+  drawLevels(save, mousePos, now) {
+    Screens.resetButtons();
+    const bg = getBackgroundById(save.equippedBackground);
+    drawBackground(App.ctx, now, bg, App.stars, save);
+    const pad = Screens.screenPad();
+
+    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.fillStyle = rgb(COLORS.blue);
+    App.ctx.fillText("SELECT STAGE", pad, Input.touchMode ? 72 : 80);
+
+    const tabW = Input.touchMode ? (viewW() - pad * 2 - 12) / 2 : 200;
+    const tabY = Input.touchMode ? 108 : 115;
+    drawNeonButton(App.ctx, Screens.btn("lvMain", "MAIN", pad, tabY, tabW, btnHeight(40)), "MAIN LEVELS", this.levelsTab === "main", true);
+    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", Input.touchMode ? pad + tabW + 12 : 300, tabY, tabW, btnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
+
+    if (this.levelsTab === "main") this._drawMainLevels(save, mousePos, pad);
+    else this._drawCommunityLevels(save, mousePos, pad, tabY);
+
+    Screens.drawActionButton("back", "BACK", Screens.bottomActionY(), mousePos, { small: true });
+    Screens.finishButtons();
+  },
+
+  _drawMainLevels(save, mousePos, pad) {
+    App.ctx.font = gameFont(16);
+    App.ctx.fillStyle = rgb(COLORS.gray);
+    App.ctx.fillText(`${LEVELS.length} official stages`, pad, Input.touchMode ? 158 : 162);
+
+    const rowH = Screens.listRowHeight();
+    const top = Input.touchMode ? 175 : 180;
+    const play = Screens.playBtnSize();
+    const content = top + LEVELS.length * rowH;
+    Screens.listMaxScroll = Math.max(0, content - (viewH() - 90));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
+
+    App.ctx.save();
+    App.ctx.beginPath();
+    App.ctx.rect(0, top - 8, viewW(), viewH() - top - 80);
+    App.ctx.clip();
+
+    LEVELS.forEach((level) => {
+      const i = level.id - 1;
+      const y = top + i * rowH - Screens.scrollY;
+      if (y + rowH < top || y > viewH() - 40) return;
+
+      const unlocked = isLevelUnlocked(save, level);
+      const cleared = isLevelCleared(save, level.id);
+      const hs = save.highScores[level.id] || 0;
+      const rect = Screens.btn(`level-${level.id}`, unlocked ? "PLAY" : "LOCKED", viewW() - play.w - 24, y - 8, play.w, play.h);
+
+      App.ctx.font = gameFont(26);
+      App.ctx.fillStyle = rgb(unlocked ? COLORS.text : COLORS.gray);
+      App.ctx.fillText(`${level.id}. ${level.name}${cleared ? " ✓" : ""}`, pad, y + 18);
+      App.ctx.font = gameFont(16);
+      App.ctx.fillText(`${START_HEARTS} hearts | 30s | HS ${hs}`, pad, y + 42);
+      App.ctx.fillStyle = rgb(COLORS.purple);
+      App.ctx.fillText(level.featureHint, pad, y + 62);
+
+      if (unlocked) drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
+      else {
+        App.ctx.fillStyle = rgb(COLORS.gray);
+        App.ctx.fillText("Clear previous stage", pad, y + 62);
+      }
+    });
+    App.ctx.restore();
+  },
+
+  _drawCommunityLevels(save, mousePos, pad, tabY) {
+    const levels = CreatorStore.list();
+    const rowCount = levels.length + 1;
+    const rowH = Screens.listRowHeight();
+    const top = tabY + 55;
+    const play = Screens.playBtnSize();
+    const content = top + rowCount * rowH;
+    Screens.listMaxScroll = Math.max(0, content - (viewH() - 90));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
+
+    App.ctx.font = gameFont(16);
+    App.ctx.fillStyle = rgb(COLORS.gray);
+    App.ctx.fillText(`${levels.length} community stages — scroll`, pad, top - 12);
+
+    App.ctx.save();
+    App.ctx.beginPath();
+    App.ctx.rect(0, top - 8, viewW(), viewH() - top - 80);
+    App.ctx.clip();
+
+    const createY = top - Screens.scrollY;
+    if (createY + rowH >= top && createY <= viewH() - 80) {
+      const createBtn = Screens.btn("openCreator", "+ CREATE STAGE", pad, createY, viewW() - pad * 2, btnHeight(48));
+      drawNeonButton(App.ctx, createBtn, "+ CREATE STAGE", pointInRect(mousePos, createBtn), true);
+    }
+
+    levels.forEach((meta, i) => {
+      const y = top + (i + 1) * rowH - Screens.scrollY;
+      if (y + rowH < top || y > viewH() - 80) return;
+
+      const cleared = (save.clearedCommunity || []).includes(meta.id);
+      const hs = save.communityHighScores?.[meta.id] || 0;
+      const rect = Screens.btn(`clevel-${meta.id}`, "PLAY", viewW() - play.w - 24, y - 8, play.w, play.h);
+
+      App.ctx.font = gameFont(24);
+      App.ctx.fillStyle = rgb(COLORS.text);
+      App.ctx.fillText(`${meta.name}${cleared ? " ✓" : ""}`, pad, y + 18);
+      App.ctx.font = gameFont(16);
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText(`Reward: ${meta.rewardName}${cleared ? " (unlocked)" : ""}`, pad, y + 42);
+      App.ctx.fillStyle = rgb(COLORS.gray);
+      App.ctx.fillText(`by ${meta.author || "Creator"} | HS ${hs}${meta.hasMusic ? " | custom music" : ""}`, pad, y + 62);
+
+      drawBackgroundSwatch(App.ctx, viewW() - pad - 88, y + 8, 64, 36, {
+        id: meta.id,
+        bg: meta.rewardBg,
+        grid: meta.rewardGrid,
+        accent: meta.rewardAccent,
+      }, save);
+
+      drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
+    });
+    App.ctx.restore();
+  },
+
+  drawCreator(save, mousePos, now) {
+    Screens.resetButtons();
+    const draft = CreatorStore.draft();
+    const bg = getBackgroundById(save.equippedBackground);
+    drawBackground(App.ctx, now, bg, App.stars, save);
+    const pad = Screens.screenPad();
+    const cardW = viewW() - pad * 2;
+
+    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.fillStyle = rgb(COLORS.blue);
+    App.ctx.fillText("CYBERTIME CREATOR", pad, Input.touchMode ? 64 : 72);
+
+    this._updateCreatorScroll();
+    const startY = 110 - Screens.scrollY;
+
+    let y = startY;
+    y = this._drawCreatorRow("NAME", draft.name, "cgName", pad, y, cardW, mousePos);
+    y = this._drawCreatorRow(`BPM: ${draft.bpm}`, "CHANGE BPM", "cgBpm", pad, y, cardW, mousePos);
+    y = this._drawCreatorRow(infiniteMechanicName({ mechanicIndex: draft.mechanicIndex }), "MECHANICS", "cgMech", pad, y, cardW, mousePos);
+    y = this._drawCreatorRow(draft.hasMusic ? "MUSIC: READY" : "MUSIC: NONE", "UPLOAD MUSIC", "cgMusic", pad, y, cardW, mousePos);
+    y = this._drawCreatorRow(`REWARD: ${draft.rewardName}`, "RENAME REWARD", "cgRewardName", pad, y, cardW, mousePos);
+
+    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+    App.ctx.fillRect(pad, y, cardW, 188);
+    App.ctx.font = uiFont(20);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText("REWARD BACKGROUND (unlock on clear)", pad + 16, y + 28);
+    this.rewardSliders = {};
+    let sy = y + 44;
+    const keys = [
+      ["bg", "BG", draft.rewardBg],
+      ["grid", "GRID", draft.rewardGrid],
+      ["accent", "GLOW", draft.rewardAccent],
+    ];
+    for (const [key, label, rgbArr] of keys) {
+      const slider = { x: pad + 16, y: sy + 16, w: cardW - 32, label };
+      this.rewardSliders[key] = slider;
+      const factor = Math.max(0.12, Math.min(1, rgbArr[0] / 200));
+      drawSlider(App.ctx, slider, factor);
+      sy += 52;
+    }
+    y = sy + 16;
+
+    const btnH = btnHeight(44);
+    const half = (cardW - 12) / 2;
+    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST PLAY", pad, y, half, btnH), "TEST PLAY", pointInRect(mousePos, Screens.buttons.cgTest), true);
+    drawNeonButton(App.ctx, Screens.btn("cgSave", "SAVE STAGE", pad + half + 12, y, half, btnH), "SAVE STAGE", pointInRect(mousePos, Screens.buttons.cgSave), true);
+    y += btnH + 12;
+    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, btnH), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+
+    drawBackgroundSwatch(App.ctx, viewW() - pad - 100, startY + 8, 80, 48, {
+      id: "preview",
+      bg: draft.rewardBg,
+      grid: draft.rewardGrid,
+      accent: draft.rewardAccent,
+    }, save);
+
+    Screens.finishButtons();
+  },
+
+  _drawCreatorRow(label, btnLabel, btnId, pad, y, cardW, mousePos) {
+    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+    App.ctx.fillRect(pad, y, cardW, 72);
+    App.ctx.font = uiFont(20);
+    App.ctx.fillStyle = rgb(COLORS.text);
+    App.ctx.fillText(label, pad + 16, y + 30);
+    const btn = Screens.btn(btnId, btnLabel, pad + cardW - 200, y + 16, 184, btnHeight(40));
+    drawNeonButton(App.ctx, btn, btnLabel, pointInRect(mousePos, btn), true);
+    return y + 80;
+  },
+
+  _updateCreatorScroll() {
+    Screens.listMaxScroll = Math.max(0, 620 - (viewH() - 100));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
+  },
+
+  async launchCommunity(meta) {
+    const musicUrl = meta.hasMusic ? await CreatorStore.getMusicUrl(meta.id) : null;
+    App.launchGame(applyCreatorDraftToLevel(meta, musicUrl));
+  },
+
+  async testDraft() {
+    const draft = { ...CreatorStore.draft(), id: "test", author: "Test" };
+    let musicUrl = null;
+    if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
+    else if (draft.hasMusic && draft.id) musicUrl = await CreatorStore.getMusicUrl(draft.id);
+    App.launchGame(applyCreatorDraftToLevel(draft, musicUrl));
+  },
+
+  handleLevelsClick(save, pos) {
+    if (this._hit("lvMain", pos)) { this.levelsTab = "main"; Screens.resetScroll(); return true; }
+    if (this._hit("lvCommunity", pos)) { this.levelsTab = "community"; Screens.resetScroll(); return true; }
+    if (App.leaderboardLevelId) return false;
+
+    if (this.levelsTab === "main") {
+      for (const level of LEVELS) {
+        if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
+          App.requestStartGame(level);
+          return true;
+        }
+      }
+      return false;
+    }
+
+    if (this._hit("openCreator", pos)) {
+      CreatorStore.resetDraft();
+      Screens.resetScroll();
+      App.state = "creator";
+      return true;
+    }
+    for (const meta of CreatorStore.list()) {
+      if (this._hit(`clevel-${meta.id}`, pos)) {
+        this.launchCommunity(meta);
+        return true;
+      }
+    }
+    return false;
+  },
+
+  handleCreatorClick(save, pos) {
+    const draft = CreatorStore.draft();
+    if (this._hit("cgBack", pos)) { App.state = "levels"; this.levelsTab = "community"; return true; }
+    if (this._hit("cgName", pos)) {
+      const names = ["MY STAGE", "NEON RUN", "BEAT LAB", "CYBER PULSE", "CUSTOM"];
+      const i = (names.indexOf(draft.name) + 1) % names.length;
+      draft.name = names[i];
+      return true;
+    }
+    if (this._hit("cgBpm", pos)) { cycleCreatorBpm(draft, 1); return true; }
+    if (this._hit("cgMech", pos)) { cycleCreatorMechanics(draft, 1); return true; }
+    if (this._hit("cgMusic", pos)) { document.getElementById("creator-music-input")?.click(); return true; }
+    if (this._hit("cgRewardName", pos)) {
+      const names = ["STAGE REWARD", "NEON SKIN", "CREATOR BG", "RARE GRID"];
+      draft.rewardName = names[(names.indexOf(draft.rewardName) + 1) % names.length];
+      return true;
+    }
+    if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
+    if (this._hit("cgSave", pos)) {
+      CreatorStore.saveDraft().then(() => CreatorStore.init()).then(() => {
+        App.state = "levels";
+        this.levelsTab = "community";
+      });
+      return true;
+    }
+    this._handleRewardSliderDrag(draft, pos);
+    return true;
+  },
+
+  _handleRewardSliderDrag(draft, pos) {
+    if (!this.rewardSliders) return;
+    const map = { bg: "rewardBg", grid: "rewardGrid", accent: "rewardAccent" };
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = this.rewardSliders[key];
+      const track = { x: slider.x, y: slider.y - 10, w: slider.w, h: 28 };
+      if (this.draggingRewardSlider || pointInRect(pos, track)) {
+        this.draggingRewardSlider = true;
+        const f = sliderValueFromPos(slider, pos);
+        const base = key === "bg" ? [18, 8, 32] : key === "grid" ? [60, 30, 90] : [255, 80, 180];
+        draft[map[key]] = base.map((c) => Math.round(c * (0.15 + 0.85 * f)));
+        return;
+      }
+    }
+  },
+
+  _hit(id, pos) {
+    return Screens._hit(id, pos);
+  },
+};
 const Screens = {
   buttons: {},
   clickAreas: {},
@@ -3030,14 +3651,65 @@ const Screens = {
     return rect;
   },
 
-  menuBtnY(index) {
-    const start = Input.touchMode ? 290 : 340;
-    const gap = Input.touchMode ? 84 : 65;
-    return start + index * gap;
+  buttonStackGap() {
+    return Input.touchMode ? 14 : 12;
   },
 
-  buttonStackGap() {
-    return 12;
+  actionButtonWidth() {
+    return Math.min(520, viewW() - this.screenPad() * 2);
+  },
+
+  actionButtonX(width = null) {
+    const w = width ?? this.actionButtonWidth();
+    return (viewW() - w) / 2;
+  },
+
+  bottomActionY(btnH = null) {
+    const h = btnH ?? btnHeight(Input.touchMode ? 52 : 48);
+    return viewH() - (Input.touchMode ? 88 : 72) - h;
+  },
+
+  drawActionButton(id, label, y, mousePos, opts = {}) {
+    const w = opts.w ?? this.actionButtonWidth();
+    const h = opts.h ?? btnHeight(Input.touchMode ? 52 : 48);
+    const x = opts.x ?? this.actionButtonX(w);
+    const rect = this.btn(id, label, x, y, w, h);
+    drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), !!opts.small);
+    return rect;
+  },
+
+  menuGrid() {
+    const fullW = this.actionButtonWidth();
+    const x = this.actionButtonX(fullW);
+    const gap = this.buttonStackGap();
+    const colGap = gap;
+    const halfW = (fullW - colGap) / 2;
+    const primaryH = btnHeight(Input.touchMode ? 68 : 60);
+    const rowH = btnHeight(Input.touchMode ? 54 : 50);
+    let y = Input.touchMode ? 288 : 308;
+
+    const slots = {
+      start: { x, y, w: fullW, h: primaryH },
+      levels: { x, y: y + primaryH + gap, w: halfW, h: rowH },
+      creator: { x: x + halfW + colGap, y: y + primaryH + gap, w: halfW, h: rowH },
+      infinite: { x, y: y + primaryH + gap + rowH + gap, w: halfW, h: rowH },
+      shop: { x: x + halfW + colGap, y: y + primaryH + gap + rowH + gap, w: halfW, h: rowH },
+      settings: { x, y: y + primaryH + gap + (rowH + gap) * 2, w: halfW, h: rowH },
+      howto: { x: x + halfW + colGap, y: y + primaryH + gap + (rowH + gap) * 2, w: halfW, h: rowH },
+    };
+    const panel = {
+      x: x - 18,
+      y: slots.start.y - 18,
+      w: fullW + 36,
+      h: slots.howto.y + slots.howto.h - slots.start.y + 36,
+    };
+    return { slots, panel };
+  },
+
+  drawMenuSlot(id, label, slot, mousePos, small = true) {
+    const rect = this.btn(id, label, slot.x, slot.y, slot.w, slot.h);
+    drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), small);
+    return rect;
   },
 
   playBtnSize() {
@@ -3067,8 +3739,7 @@ const Screens = {
   },
 
   scrollableState(state) {
-    if (state === "shop") return true;
-    if (!Input.touchMode) return false;
+    if (state === "shop" || state === "creator") return true;
     return state === "levels";
   },
 
@@ -3140,7 +3811,7 @@ const Screens = {
 
   shopItemCount() {
     if (this.shopTab === "skins") return MOUSE_SKINS.length;
-    return BACKGROUNDS.length + 1;
+    return listShopBackgrounds(Input.save || App.save).length + 1;
   },
 
   updateShopScroll() {
@@ -3195,12 +3866,15 @@ const Screens = {
     const hs = `HIGH SCORE: ${best}`;
     App.ctx.fillText(hs, (viewW() - App.ctx.measureText(hs).width) / 2, 270);
 
-    drawNeonButton(App.ctx, this.btn("start", "START", null, this.menuBtnY(0)), "START", pointInRect(mousePos, this.buttons.start));
-    drawNeonButton(App.ctx, this.btn("levels", "LEVELS", null, this.menuBtnY(1)), "LEVELS", pointInRect(mousePos, this.buttons.levels));
-    drawNeonButton(App.ctx, this.btn("infinite", "INFINITE", null, this.menuBtnY(2)), "INFINITE", pointInRect(mousePos, this.buttons.infinite));
-    drawNeonButton(App.ctx, this.btn("shop", "SHOP", null, this.menuBtnY(3)), "SHOP", pointInRect(mousePos, this.buttons.shop));
-    drawNeonButton(App.ctx, this.btn("settings", "SETTINGS", null, this.menuBtnY(4)), "SETTINGS", pointInRect(mousePos, this.buttons.settings));
-    drawNeonButton(App.ctx, this.btn("howto", "HOW TO PLAY", null, this.menuBtnY(5)), "HOW TO PLAY", pointInRect(mousePos, this.buttons.howto), true);
+    const menu = this.menuGrid();
+    drawUiPanel(App.ctx, menu.panel);
+    this.drawMenuSlot("start", "START", menu.slots.start, mousePos, false);
+    this.drawMenuSlot("levels", "LEVELS", menu.slots.levels, mousePos);
+    CreatorUi.drawMenuSlot(menu.slots.creator, mousePos);
+    this.drawMenuSlot("infinite", "INFINITE", menu.slots.infinite, mousePos);
+    this.drawMenuSlot("shop", "SHOP", menu.slots.shop, mousePos);
+    this.drawMenuSlot("settings", "SETTINGS", menu.slots.settings, mousePos);
+    this.drawMenuSlot("howto", "HOW TO", menu.slots.howto, mousePos);
 
     if (Input.touchMode) {
       App.ctx.font = gameFont(16);
@@ -3212,58 +3886,7 @@ const Screens = {
   },
 
   drawLevels(save, mousePos, now) {
-    this.resetButtons();
-    const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars, save);
-
-    App.ctx.font = gameFont(48);
-    App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SELECT STAGE", 80, 80);
-    App.ctx.font = gameFont(18);
-    App.ctx.fillStyle = rgb(COLORS.gray);
-    App.ctx.fillText(`${LEVELS.length} stages — ${Input.touchMode ? "swipe to scroll" : "scroll with mouse wheel"}`, 80, 108);
-
-    this.updateListScrollMax(LEVELS.length);
-    const rowH = this.listRowHeight();
-    const top = this.listTop();
-    const play = this.playBtnSize();
-
-    App.ctx.save();
-    App.ctx.beginPath();
-    App.ctx.rect(0, top - 8, viewW(), this.listViewportHeight());
-    App.ctx.clip();
-
-    LEVELS.forEach((level) => {
-      const i = level.id - 1;
-      const y = top + i * rowH - this.scrollY;
-      if (y + rowH < top || y > viewH() - 40) return;
-
-      const unlocked = isLevelUnlocked(save, level);
-      const cleared = isLevelCleared(save, level.id);
-      const hs = save.highScores[level.id] || 0;
-      const rect = this.btn(`level-${level.id}`, unlocked ? "PLAY" : "LOCKED", viewW() - play.w - 24, y - 8, play.w, play.h);
-
-      App.ctx.font = gameFont(26);
-      App.ctx.fillStyle = rgb(unlocked ? COLORS.text : COLORS.gray);
-      App.ctx.fillText(`${level.id}. ${level.name}${cleared ? " ✓" : ""}`, 80, y + 18);
-      App.ctx.font = gameFont(16);
-      App.ctx.fillText(`${START_HEARTS} hearts | 30s | HS ${hs}`, 80, y + 42);
-      App.ctx.fillStyle = rgb(COLORS.purple);
-      App.ctx.fillText(level.featureHint, 80, y + 62);
-
-      if (unlocked) {
-        drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
-      } else {
-        const prev = getLevelById(level.id - 1);
-        App.ctx.fillStyle = rgb(COLORS.gray);
-        App.ctx.fillText(`Clear stage ${prev.id} first`, 80, y + 62);
-      }
-    });
-
-    App.ctx.restore();
-
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
-    this.finishButtons();
+    CreatorUi.drawLevels(save, mousePos, now);
   },
 
   drawLevelLeaderboard(save, levelId, mousePos, now) {
@@ -3336,18 +3959,14 @@ const Screens = {
     App.ctx.fillStyle = rgb(COLORS.green);
     App.ctx.fillText(`BEST SCORE: ${best}`, blockX, y + 8);
 
-    const playW = Input.touchMode ? viewW() - pad * 2 : 260;
-    const playX = Input.touchMode ? pad : null;
-    const backY = viewH() - (Input.touchMode ? 90 : 70);
-    const playY = backY - btnHeight(Input.touchMode ? 56 : 56) - this.buttonStackGap();
-    const play = this.btn("infPlay", "PLAY", playX, playY, playW, btnHeight(Input.touchMode ? 56 : 56));
-    drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
-    drawNeonButton(
-      App.ctx,
-      this.btn("back", "BACK", playX, backY, playW, btnHeight(52)),
-      "BACK",
-      pointInRect(mousePos, this.buttons.back),
-    );
+    const btnW = this.actionButtonWidth();
+    const playH = btnHeight(Input.touchMode ? 58 : 54);
+    const backH = btnHeight(Input.touchMode ? 52 : 48);
+    const backY = this.bottomActionY(backH);
+    const playY = backY - playH - this.buttonStackGap();
+    drawUiPanel(App.ctx, { x: blockX - 16, y: Input.touchMode ? 58 : 64, w: blockW + 32, h: y + 36 });
+    this.drawActionButton("infPlay", "PLAY", playY, mousePos, { w: btnW, h: playH });
+    this.drawActionButton("back", "BACK", backY, mousePos, { w: btnW, h: backH, small: true });
     this.finishButtons();
   },
 
@@ -3394,7 +4013,7 @@ const Screens = {
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = this.screenPad();
-    const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
+    const items = this.shopTab === "skins" ? MOUSE_SKINS : listShopBackgrounds(save);
     const tabH = btnHeight(Input.touchMode ? 48 : 40);
 
     App.ctx.font = Input.touchMode ? uiFont(40) : gameFont(48);
@@ -3465,9 +4084,11 @@ const Screens = {
 
     App.ctx.restore();
 
-    const backY = viewH() - (Input.touchMode ? 90 : 70);
-    const backW = Input.touchMode ? cardW : null;
-    drawNeonButton(App.ctx, this.btn("back", "BACK", Input.touchMode ? pad : null, backY, backW, btnHeight(Input.touchMode ? 52 : 44)), "BACK", pointInRect(mousePos, this.buttons.back));
+    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, {
+      w: cardW,
+      h: btnHeight(Input.touchMode ? 52 : 48),
+      small: true,
+    });
     this.finishButtons();
   },
 
@@ -3476,60 +4097,54 @@ const Screens = {
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
 
-    App.ctx.font = gameFont(48);
-    App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SETTINGS", 80, 90);
+    const pad = this.screenPad();
+    const btnW = this.actionButtonWidth();
+    const btnX = this.actionButtonX(btnW);
+    const stackGap = this.buttonStackGap();
+    const btnH = btnHeight(44);
+    const halfW = (btnW - stackGap) / 2;
 
-    this.sliders.music = { x: 80, y: 160, w: 400, label: "MUSIC" };
-    this.sliders.sfx = { x: 80, y: 230, w: 400, label: "SFX" };
+    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.fillStyle = rgb(COLORS.blue);
+    App.ctx.fillText("SETTINGS", pad, Input.touchMode ? 72 : 90);
+
+    const sliderW = btnW - 32;
+    this.sliders.music = { x: btnX + 16, y: Input.touchMode ? 118 : 140, w: sliderW, label: "MUSIC" };
+    this.sliders.sfx = { x: btnX + 16, y: Input.touchMode ? 188 : 210, w: sliderW, label: "SFX" };
     drawSlider(App.ctx, this.sliders.music, save.settings.musicVolume);
     drawSlider(App.ctx, this.sliders.sfx, save.settings.sfxVolume);
 
-    App.ctx.font = gameFont(24);
+    App.ctx.font = uiFont(Input.touchMode ? 18 : 22);
     App.ctx.fillStyle = rgb(COLORS.text);
     const playerLine = Auth.isLoggedIn()
       ? `PLAYER: ${Auth.displayName}`
       : "GUEST — scores won't appear on leaderboard";
-    App.ctx.fillText(playerLine, 80, 310);
+    App.ctx.fillText(playerLine, btnX + 16, Input.touchMode ? 258 : 280);
+
+    let y = Input.touchMode ? 286 : 310;
+    const panelH = (Input.touchMode ? 3 : 4) * (btnH + stackGap) + 48;
+    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: panelH });
+
     if (!Input.touchMode) {
-      App.ctx.fillText(`BALL: Mouse btn ${save.keys.ball} / Key ${save.keys.ballKey}`, 80, 350);
-      App.ctx.fillText(`BOMB: Mouse btn ${save.keys.bomb} / Key ${save.keys.bombKey}`, 80, 390);
-      drawNeonButton(App.ctx, this.btn("remapBall", "REMAP BALL KEY", 80, 420, 280, 44), this.waitingKey === "ball" ? "PRESS KEY..." : "REMAP BALL KEY", pointInRect(mousePos, this.buttons.remapBall), true);
-      drawNeonButton(App.ctx, this.btn("remapBomb", "REMAP BOMB KEY", 380, 420, 280, 44), this.waitingKey === "bomb" ? "PRESS KEY..." : "REMAP BOMB KEY", pointInRect(mousePos, this.buttons.remapBomb), true);
+      this.drawMenuSlot("remapBall", this.waitingKey === "ball" ? "PRESS..." : "BALL KEY", { x: btnX, y, w: halfW, h: btnH }, mousePos);
+      this.drawMenuSlot("remapBomb", this.waitingKey === "bomb" ? "PRESS..." : "BOMB KEY", { x: btnX + halfW + stackGap, y, w: halfW, h: btnH }, mousePos);
+      y += btnH + stackGap;
     }
+
+    const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
+    this.drawActionButton("toggleAccessibility", accLabel, y, mousePos, { w: btnW, h: btnH, small: true });
+    y += btnH + stackGap;
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
-    const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
-    const stackGap = this.buttonStackGap();
-    const btnH = btnHeight(44);
-
-    if (Input.touchMode) {
-      const pad = this.screenPad();
-      const btnW = viewW() - pad * 2;
-      let y = 340;
-      drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, pad, y, btnW, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
+    this.drawMenuSlot("account", accountLabel, { x: btnX, y, w: halfW, h: btnH }, mousePos);
+    this.drawMenuSlot("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", { x: btnX + halfW + stackGap, y, w: halfW, h: btnH }, mousePos);
+    if (!PwaInstall.isStandalone() && Input.touchMode) {
       y += btnH + stackGap;
-      drawNeonButton(App.ctx, this.btn("account", accountLabel, pad, y, btnW, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
-      y += btnH + stackGap;
-      drawNeonButton(App.ctx, this.btn("toggleMobile", "MOBILE: ON", pad, y, btnW, btnH), "MOBILE: ON", pointInRect(mousePos, this.buttons.toggleMobile), true);
-      if (!PwaInstall.isStandalone()) {
-        y += btnH + stackGap;
-        const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
-        drawNeonButton(App.ctx, this.btn("installApp", installLabel, pad, y, btnW, btnHeight(48)), installLabel, pointInRect(mousePos, this.buttons.installApp), true);
-        if (PwaInstall.isIos() && !PwaInstall.canPromptInstall()) {
-          App.ctx.font = uiFont(15);
-          App.ctx.fillStyle = rgb(COLORS.gray);
-          App.ctx.fillText(PwaInstall.iosHint(), pad, y + btnHeight(48) + 28);
-        }
-      }
-    } else {
-      const settingsY = 490;
-      drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - 70, 580, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
-      drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
-      drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnH), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
+      const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
+      this.drawActionButton("installApp", installLabel, y, mousePos, { w: btnW, h: btnHeight(48), small: true });
     }
 
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
+    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { w: btnW, h: btnHeight(48), small: true });
     this.finishButtons();
   },
 
@@ -3547,7 +4162,7 @@ const Screens = {
       y += i === 0 ? 44 : 32;
     });
 
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, 620), "BACK", pointInRect(mousePos, this.buttons.back));
+    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { small: true });
     this.finishButtons();
   },
 
@@ -3579,6 +4194,7 @@ const Screens = {
 
     const success = game.lastRewards?.success;
     const infinite = game.level.infinite;
+    const community = game.level.community;
     const title = success ? "LEVEL COMPLETE" : (game.failMessage || "GAME OVER");
     const titleColor = success ? COLORS.green : COLORS.red;
 
@@ -3594,8 +4210,16 @@ const Screens = {
           `SCORE: ${game.score}`,
           r.newBest ? "NEW BEST!" : `BEST: ${r.best || 0}`,
           game.endReason === "hearts" ? "Ran out of hearts" : null,
+          game.endReason === "exploded" ? "Target exploded — all hearts lost!" : null,
+          game.endReason === "timing" ? "Missed the beat!" : null,
           `+${r.xpGain || 0} XP   +${r.coinGain || 0} COINS`,
         ].filter(Boolean)
+      : success && community
+        ? [
+            `SCORE: ${game.score}`,
+            r.rewardUnlocked ? `UNLOCKED: ${r.rewardName || game.level.rewardName}!` : `Reward: ${game.level.rewardName}`,
+            `+${r.xpGain} XP   +${r.coinGain} COINS`,
+          ]
       : success
         ? [
             `SCORE: ${game.score}`,
@@ -3606,9 +4230,12 @@ const Screens = {
           ].filter(Boolean)
         : [
             `SCORE: ${game.score}`,
-            game.endReason === "hearts" ? "Ran out of hearts" : "Keep your hearts!",
+            game.endReason === "exploded" ? "Hit every target before it pops!" : null,
+            game.endReason === "timing" ? "Hit targets on the beat!" : null,
+            game.endReason === "hearts" ? "Ran out of hearts" : null,
+            !game.endReason || (game.endReason !== "exploded" && game.endReason !== "timing" && game.endReason !== "hearts") ? "Keep your hearts!" : null,
             `+${r.xpGain || 0} XP   +${r.coinGain || 0} COINS`,
-          ];
+          ].filter(Boolean);
     statLines.forEach((line, i) => {
       App.ctx.fillText(line, (viewW() - App.ctx.measureText(line).width) / 2, 200 + i * 36);
     });
@@ -3636,18 +4263,18 @@ const Screens = {
       }
     }
 
-    const btnY = viewH() - (Input.touchMode ? 110 : 90);
-    if (!infinite) {
+    const btnY = this.bottomActionY();
+    if (!infinite && !community) {
       const leaderboardY = canShare ? Math.min(blockY + 8, btnY - 170) : 330;
       drawLeaderboardPanel(App.ctx, save, game.level.id, 80, leaderboardY);
     }
 
-    if (success && r.unlockedNext && !infinite) {
-      drawNeonButton(App.ctx, this.btn("next", "NEXT", null, btnY), "NEXT", pointInRect(mousePos, this.buttons.next));
+    if (success && r.unlockedNext && !infinite && !community) {
+      this.drawActionButton("next", "NEXT", btnY, mousePos);
     } else if (!success) {
-      drawNeonButton(App.ctx, this.btn("restart", "RESTART", null, btnY), "RESTART", pointInRect(mousePos, this.buttons.restart));
+      this.drawActionButton("restart", "RESTART", btnY, mousePos);
     } else {
-      drawNeonButton(App.ctx, this.btn("restart", "RETRY", null, btnY), "RETRY", pointInRect(mousePos, this.buttons.restart));
+      this.drawActionButton("restart", "RETRY", btnY, mousePos);
     }
     this.finishButtons();
   },
@@ -3655,7 +4282,8 @@ const Screens = {
   handleClick(state, save, pos) {
     if (state === "menu") {
       if (this._hit("start", pos)) { App.requestStartGame(getLevelById(1)); return true; }
-      if (this._hit("levels", pos)) { this.resetScroll(); App.state = "levels"; return true; }
+      if (this._hit("levels", pos)) { CreatorUi.levelsTab = "main"; this.resetScroll(); App.state = "levels"; return true; }
+      if (this._hit("creator", pos)) { CreatorStore.resetDraft(); this.resetScroll(); App.state = "creator"; return true; }
       if (this._hit("infinite", pos)) {
         this.infiniteSetup = this.defaultInfiniteSetup();
         App.state = "infinite";
@@ -3674,13 +4302,13 @@ const Screens = {
         }
         return true;
       }
-      for (const level of LEVELS) {
-        if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
-          App.requestStartGame(level);
-          return true;
-        }
-      }
+      if (CreatorUi.handleLevelsClick(save, pos)) return true;
       if (this._hit("back", pos)) { App.state = "menu"; return true; }
+    }
+
+    if (state === "creator") {
+      CreatorUi.handleCreatorClick(save, pos);
+      return true;
     }
 
     if (state === "infinite") {
@@ -3781,7 +4409,7 @@ const Screens = {
   },
 
   _handleShopPurchase(save, pos) {
-    const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
+    const items = this.shopTab === "skins" ? MOUSE_SKINS : listShopBackgrounds(save);
     for (const item of items) {
       if (this._hit(`buy-${item.id}`, pos)) {
         const col = this.shopTab === "skins" ? "ownedSkins" : "ownedBackgrounds";
@@ -3871,6 +4499,7 @@ const App = {
     UiIcons.load();
     this.bindEvents();
     this.bindNameForm();
+    this.bindCreatorMusic();
 
     Auth.init(() => this.startSession());
 
@@ -3921,6 +4550,19 @@ const App = {
     Auth.updatePinHint("");
   },
 
+  bindCreatorMusic() {
+    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await CreatorStore.attachMusic(file);
+      } catch (err) {
+        console.error(err);
+      }
+      e.target.value = "";
+    });
+  },
+
   tryLogin() {
     const name = document.getElementById("player-name")?.value || "";
     const pin = document.getElementById("player-pin")?.value || "";
@@ -3953,6 +4595,7 @@ const App = {
       Input.save = this.save;
       this.stars = createStars();
       AudioEngine.setVolumes(this.save.settings);
+      CreatorStore.init().catch(() => {});
       Auth.hideNameScreen();
       this.sessionReady = true;
       if (this.state !== "game" || !this.game?.running) {
@@ -4030,6 +4673,9 @@ const App = {
       if (this.state === "shop" && Screens.draggingBgSlider) {
         Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
       }
+      if (this.state === "creator" && CreatorUi.draggingRewardSlider) {
+        CreatorUi._handleRewardSliderDrag(CreatorStore.draft(), Input.mousePos);
+      }
     });
 
     canvas.addEventListener("pointerup", (e) => {
@@ -4041,6 +4687,7 @@ const App = {
       }
       Screens.draggingSlider = false;
       Screens.draggingBgSlider = false;
+      CreatorUi.draggingRewardSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {
@@ -4066,7 +4713,7 @@ const App = {
     });
 
     window.addEventListener("wheel", (e) => {
-      if (App.state === "levels" || App.state === "shop") {
+      if (App.state === "levels" || App.state === "shop" || App.state === "creator") {
         Screens.scrollList(e.deltaY * 0.6);
         e.preventDefault();
       }
@@ -4140,9 +4787,15 @@ const App = {
   endGame(reason) {
     if (!this.game || this.state === "gameover") return;
     this.game.endReason = reason;
-    this.game.failMessage = reason === "hearts" ? "OUT OF HEARTS" : pickFailMessage();
+    this.game.failMessage = reason === "hearts"
+      ? "OUT OF HEARTS"
+      : reason === "exploded"
+        ? "TARGET EXPLODED"
+        : reason === "timing"
+          ? "TOO SLOW"
+          : pickFailMessage();
     GameLogic.finish(this.game, this.save);
-    refreshLeaderboard(this.game.level.id);
+    if (!this.game.level.community) refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     this.state = "gameover";
   },
@@ -4185,6 +4838,9 @@ const App = {
         this.renderCursor(this.save);
       } else if (this.state === "levels") {
         Screens.drawLevels(this.save, mousePos, now);
+        this.renderCursor(this.save);
+      } else if (this.state === "creator") {
+        CreatorUi.drawCreator(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "infinite") {
         Screens.drawInfiniteSelect(this.save, mousePos, now);

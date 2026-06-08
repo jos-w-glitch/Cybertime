@@ -80,10 +80,14 @@ const AudioEngine = {
     this.mode = "level";
     this.playing = true;
     this.resetMusicVolume();
-    this._playMusicFile(MUSIC_LEVEL(level), null, () => {
-      if (level.musicId === "track1") this._playMusicFile(null, MENU_MUSIC_FALLBACK);
-      else if (this.ctx) this._playProceduralTrack(level.musicId, level.bpm);
-    });
+    if (level.communityMusicUrl) {
+      this._playBlobUrl(level.communityMusicUrl);
+    } else {
+      this._playMusicFile(MUSIC_LEVEL(level), null, () => {
+        if (level.musicId === "track1") this._playMusicFile(null, MENU_MUSIC_FALLBACK);
+        else if (this.ctx) this._playProceduralTrack(level.musicId, level.bpm);
+      });
+    }
     const beatMs = 60000 / level.bpm;
     let beat = 0;
     this.onBeat?.(beat);
@@ -92,6 +96,25 @@ const AudioEngine = {
       beat += 1;
       this.onBeat?.(beat);
     }, beatMs);
+  },
+
+  _playBlobUrl(url) {
+    const audio = new Audio(url);
+    audio.loop = true;
+    audio.play().then(() => {
+      this.mp3Audio = audio;
+      if (this.ctx && this.musicGain) {
+        try {
+          const track = this.ctx.createMediaElementSource(audio);
+          track.connect(this.musicGain);
+          this.musicNodes.push(track);
+        } catch {
+          audio.volume = this.baseMusicVolume;
+        }
+      } else {
+        audio.volume = this.baseMusicVolume;
+      }
+    }).catch(() => {});
   },
 
   _playMusicFile(basePath, fallback, onFail) {

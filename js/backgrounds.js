@@ -20,6 +20,16 @@ function defaultBgTuning() {
 }
 
 function resolveBackground(save) {
+  const level = App?.game?.level;
+  if (level?.playBg) {
+    return {
+      id: level.rewardBgId || "play",
+      name: level.rewardName || "",
+      bg: level.playBg.bg,
+      grid: level.playBg.grid,
+      accent: level.playBg.accent,
+    };
+  }
   const theme = getBackgroundById(save.equippedBackground);
   const t = { ...defaultBgTuning(), ...save.bgTuning };
   const scale = (rgb, factor) => rgb.map((c) => Math.round(c * (0.12 + 0.88 * factor)));

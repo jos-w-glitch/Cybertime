@@ -235,7 +235,9 @@ const HOW_TO_LINES = [
   "Stages unlock mechanics two at a time",
   "Purple pairs from stage 7, sliders from 9",
   "Build COMBO for bigger score & XP",
-  "Beat the GOAL score before time runs out (30s)",
+  "Miss the beat = target explodes — all hearts lost!",
+  "Click OUTSIDE targets costs one heart",
+  "Survive 30 seconds with hearts left to clear a stage",
   "INFINITE mode — pick track + mechanics, survive!",
   "Earn COINS — clear stages for the best payout",
 ];
@@ -251,7 +253,9 @@ const HOW_TO_LINES_MOBILE = [
   "Login in Settings to join leaderboards",
   "#1 on leaderboard earns bonus COINS!",
   "Build COMBO for bigger score & XP",
-  "Beat the GOAL score before time runs out (30s)",
+  "Miss the beat = target explodes — all hearts lost!",
+  "Tap OUTSIDE targets costs one heart",
+  "Survive 30 seconds with hearts left to clear a stage",
 ];
 
 function getHowToLines() {
@@ -381,7 +385,14 @@ function getSkinById(id) {
 }
 
 function getBackgroundById(id) {
+  const save = Input?.save || App?.save;
+  const custom = save?.creatorBackgrounds?.find((b) => b.id === id);
+  if (custom) return custom;
   return BACKGROUNDS.find((b) => b.id === id) || BACKGROUNDS[0];
+}
+
+function listShopBackgrounds(save) {
+  return [...BACKGROUNDS, ...(save?.creatorBackgrounds || [])];
 }
 
 function getTutorial(key) {

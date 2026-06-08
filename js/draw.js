@@ -207,6 +207,20 @@ function drawCursor(ctx, pos, skin) {
   ctx.restore();
 }
 
+function drawUiPanel(ctx, rect) {
+  ctx.fillStyle = "rgba(10, 10, 20, 0.78)";
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+  ctx.fill();
+  ctx.strokeStyle = rgb(COLORS.blue, 0.45);
+  ctx.lineWidth = 2;
+  roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 16);
+  ctx.stroke();
+  ctx.strokeStyle = rgb(COLORS.green, 0.12);
+  ctx.lineWidth = 1;
+  roundRect(ctx, rect.x + 4, rect.y + 4, rect.w - 8, rect.h - 8, 12);
+  ctx.stroke();
+}
+
 function drawNeonButton(ctx, rect, label, hovered, small = false) {
   ctx.fillStyle = rgb(hovered ? [0, 255, 150] : [0, 180, 120]);
   roundRect(ctx, rect.x, rect.y, rect.w, rect.h, 8);

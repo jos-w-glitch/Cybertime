@@ -38,6 +38,8 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/audio.js" \
     "$ROOT/js/game.js" \
     "$ROOT/js/share.js" \
+    "$ROOT/js/creator.js" \
+    "$ROOT/js/creator-ui.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 
@@ -60,6 +62,8 @@ echo "cybertime $BUILD_ID" > "$GAME/build.txt"
 
 cp "$SCRIPT_DIR/deploy-index.html" "$GAME/index.html"
 sed -i '' "s|<!--BUILD_ID-->|$BUILD_ID|g" "$GAME/index.html" 2>/dev/null || sed -i "s|<!--BUILD_ID-->|$BUILD_ID|g" "$GAME/index.html"
+
+bash "$SCRIPT_DIR/build-itch.sh"
 
 (cd "$DIST" && zip -r -q "$ROOT/cybertime-vercel.zip" .)
 
