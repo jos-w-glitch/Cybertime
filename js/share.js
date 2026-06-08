@@ -1,7 +1,14 @@
-const SHARE_GAME_URL = "https://www.joseph-weiss.com/cybertime/";
-
 const Share = {
   _renderer: null,
+  _videoBlob: null,
+  _preparePromise: null,
+  _status: "idle",
+
+  reset() {
+    this._videoBlob = null;
+    this._preparePromise = null;
+    this._status = "idle";
+  },
 
   buildMessage(score, level) {
     if (level?.infinite) {
@@ -10,10 +17,47 @@ const Share = {
     return `I got ${score} points in CyberTime! Can you beat me?`;
   },
 
+  shareLabel() {
+    if (this._status === "preparing") return "PREPARING VIDEO...";
+    if (this._status === "ready") return "SHARE VIDEO";
+    if (this._status === "failed") return "VIDEO UNAVAILABLE";
+    return "SHARE VIDEO";
+  },
+
   async loadRenderer() {
     if (this._renderer) return this._renderer;
     this._renderer = await import("./replay/replay-render.js");
     return this._renderer;
+  },
+
+  async renderReplayBlob(replay) {
+    const renderer = await this.loadRenderer();
+    const supported = await renderer.canRenderReplayVideo();
+    if (!supported) return null;
+    return renderer.renderCyberTimeReplay(replay);
+  },
+
+  prepareReplay(game) {
+    this.reset();
+    const replay = Replay.forShare(game);
+    if (!replay?.events?.length) {
+      this._status = "failed";
+      return Promise.resolve(null);
+    }
+
+    this._status = "preparing";
+    this._preparePromise = this.renderReplayBlob(replay)
+      .then((blob) => {
+        this._videoBlob = blob;
+        this._status = blob ? "ready" : "failed";
+        return blob;
+      })
+      .catch((err) => {
+        console.warn("Replay prepare failed", err);
+        this._status = "failed";
+        return null;
+      });
+    return this._preparePromise;
   },
 
   downloadBlob(blob, name) {
@@ -22,57 +66,63 @@ const Share = {
     link.href = url;
     link.download = name;
     link.click();
-    URL.revokeObjectURL(url);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
   },
 
-  async shareText(message) {
-    const payload = `${message}\n${SHARE_GAME_URL}`;
-
-    if (navigator.share) {
+  async saveVideoBlob(blob) {
+    if (window.showSaveFilePicker) {
       try {
-        await navigator.share({ title: "CyberTime", text: message, url: SHARE_GAME_URL });
-        return "shared";
+        const handle = await window.showSaveFilePicker({
+          suggestedName: "cybertime-replay.mp4",
+          types: [{ accept: { "video/mp4": [".mp4"] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(blob);
+        await writable.close();
+        return "saved";
       } catch (err) {
         if (err?.name === "AbortError") return null;
       }
     }
 
-    if (navigator.clipboard?.writeText) {
-      try {
-        await navigator.clipboard.writeText(payload);
-        return "copied";
-      } catch {}
-    }
-
-    return null;
+    this.downloadBlob(blob, "cybertime-replay.mp4");
+    return "downloaded";
   },
 
-  async shareScore(game) {
-    const score = game?.score ?? 0;
-    const level = game?.level;
-    const message = this.buildMessage(score, level);
-    const replay = Replay.forShare(game);
+  async shareVideoFile(blob) {
+    const file = new File([blob], "cybertime-replay.mp4", { type: "video/mp4" });
 
-    if (replay?.events?.length) {
-      try {
-        Screens.shareFeedback = "Creating replay...";
-        const renderer = await this.loadRenderer();
-        const supported = await renderer.canRenderReplayVideo();
-        if (supported) {
-          const blob = await renderer.renderCyberTimeReplay(replay);
-          const file = new File([blob], "cybertime-replay.mp4", { type: "video/mp4" });
-          if (navigator.share && navigator.canShare?.({ files: [file] })) {
-            await navigator.share({ title: "CyberTime", text: message, files: [file] });
-            return "shared";
-          }
-          this.downloadBlob(blob, "cybertime-replay.mp4");
-          return "downloaded";
+    if (navigator.share) {
+      const payloads = [
+        { files: [file] },
+        { title: "CyberTime Replay", files: [file] },
+      ];
+
+      for (const payload of payloads) {
+        if (navigator.canShare && !navigator.canShare(payload)) continue;
+        try {
+          await navigator.share(payload);
+          return "shared";
+        } catch (err) {
+          if (err?.name === "AbortError") return null;
         }
-      } catch (err) {
-        console.warn("Remotion replay render failed", err);
       }
     }
 
-    return this.shareText(message);
+    return this.saveVideoBlob(blob);
+  },
+
+  async shareScore(game) {
+    if (this._status === "failed") return "failed";
+
+    let blob = this._videoBlob;
+    if (!blob) {
+      Screens.shareFeedback = "Finishing video...";
+      blob = await (this._preparePromise || this.prepareReplay(game));
+    }
+    if (!blob) return "failed";
+
+    const result = await this.shareVideoFile(blob);
+    return result || "failed";
   },
 };

@@ -618,8 +618,9 @@ const Screens = {
         Input.touchMode ? 18 : 20,
         COLORS.gold,
       ) + 8;
-      const shareBtn = this.btn("share", "SHARE", null, blockY, null, btnHeight(48));
-      drawNeonButton(App.ctx, shareBtn, "SHARE", pointInRect(mousePos, shareBtn), true);
+      const shareBtn = this.btn("share", Share.shareLabel(), null, blockY, null, btnHeight(48));
+      const shareReady = Share._status === "ready";
+      drawNeonButton(App.ctx, shareBtn, Share.shareLabel(), pointInRect(mousePos, shareBtn) && shareReady, true);
       blockY = shareBtn.y + shareBtn.h + 12;
       if (this.shareFeedback) {
         App.ctx.font = uiFont(16);
@@ -740,18 +741,21 @@ const Screens = {
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
       if (this._hit("share", pos)) {
+        if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {
-          if (result === "copied") {
-            Screens.shareFeedback = "Copied to clipboard!";
-          } else if (result === "downloaded") {
-            Screens.shareFeedback = "Replay video saved!";
+          if (result === "downloaded") {
+            Screens.shareFeedback = "Video saved to downloads!";
+          } else if (result === "saved") {
+            Screens.shareFeedback = "Video saved!";
           } else if (result === "shared") {
-            Screens.shareFeedback = "Shared!";
+            Screens.shareFeedback = "Video shared!";
+          } else if (result === "failed") {
+            Screens.shareFeedback = "Video not supported — try Chrome";
           } else {
             Screens.shareFeedback = "";
             return;
           }
-          setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+          setTimeout(() => { Screens.shareFeedback = ""; }, 3000);
         });
         return true;
       }

@@ -240,6 +240,7 @@ const App = {
     this.activeTutorial = null;
     this.leaderboardLevelId = null;
     Screens.shareFeedback = "";
+    Share.reset();
     this.state = "menu";
     AudioEngine.startMenuMusic();
   },
@@ -297,6 +298,7 @@ const App = {
     this.game.failMessage = pickFailMessage();
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
+    Share.prepareReplay(this.game);
     this.state = "gameover";
   },
 

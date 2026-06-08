@@ -1,4 +1,4 @@
-const CACHE = "cybertime-shell-v11";
+const CACHE = "cybertime-shell-v12";
 const BASE = "/cybertime/";
 const SHELL = [
   `${BASE}`,
