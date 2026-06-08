@@ -32,6 +32,7 @@ const App = {
     this.bindNameForm();
 
     Auth.init(() => this.startSession());
+    CrazyGamesSdk.init();
 
     document.getElementById("wrapper")?.classList.add("session-active");
 
@@ -118,7 +119,10 @@ const App = {
       if (this.state !== "game" || !this.game?.running) {
         this.state = this.state === "settings" ? "settings" : "menu";
       }
-      if (this.state === "menu") AudioEngine.startMenuMusic();
+      if (this.state === "menu") {
+        CrazyGamesHooks.onMenu();
+        AudioEngine.startMenuMusic();
+      }
       if (Input.touchMode) MobileShell.syncRotatePrompt();
     } catch (err) {
       console.error(err);
@@ -232,6 +236,10 @@ const App = {
         Screens.scrollList(e.deltaY * 0.6);
         e.preventDefault();
       }
+      if (App.state === "cg-sdk") {
+        CrazyGamesUi.scrollY = Math.max(0, Math.min(CrazyGamesUi.maxScroll, CrazyGamesUi.scrollY + e.deltaY * 0.6));
+        e.preventDefault();
+      }
     }, { passive: false });
   },
 
@@ -250,6 +258,7 @@ const App = {
     Screens.shareFeedback = "";
     Share.reset();
     this.state = "menu";
+    CrazyGamesHooks.onMenu();
     AudioEngine.startMenuMusic();
   },
 
@@ -282,6 +291,7 @@ const App = {
 
   async launchGame(level) {
     CrazyGamesSdk.gameplayStop();
+    CrazyGamesHooks.onEnterGame();
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
@@ -312,6 +322,7 @@ const App = {
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
     SitePromo.onGameOver();
+    CrazyGamesHooks.onGameOver(this.game, this.save);
     this.state = "gameover";
   },
 
@@ -364,6 +375,9 @@ const App = {
         this.renderCursor(this.save);
       } else if (this.state === "settings") {
         Screens.drawSettings(this.save, mousePos, now);
+        this.renderCursor(this.save);
+      } else if (this.state === "cg-sdk") {
+        CrazyGamesUi.draw(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "howto") {
         Screens.drawHowTo(mousePos, now, this.save);

@@ -568,6 +568,10 @@ const Screens = {
       drawNeonButton(App.ctx, this.btn("account", accountLabel, pad, y, btnW, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
       y += btnH + stackGap;
       drawNeonButton(App.ctx, this.btn("toggleMobile", "MOBILE: ON", pad, y, btnW, btnH), "MOBILE: ON", pointInRect(mousePos, this.buttons.toggleMobile), true);
+      if (CrazyGamesSdk.enabled()) {
+        y += btnH + stackGap;
+        drawNeonButton(App.ctx, this.btn("cgSdk", "SDK PANEL", pad, y, btnW, btnH), "SDK PANEL", pointInRect(mousePos, this.buttons.cgSdk), true);
+      }
       if (!PwaInstall.isStandalone()) {
         y += btnH + stackGap;
         const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
@@ -583,6 +587,9 @@ const Screens = {
       drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - 70, 580, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
       drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
       drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnH), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
+      if (CrazyGamesSdk.enabled()) {
+        drawNeonButton(App.ctx, this.btn("cgSdk", "SDK PANEL", 520, settingsY, 140, btnH), "SDK PANEL", pointInRect(mousePos, this.buttons.cgSdk), true);
+      }
     }
 
     drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
@@ -690,7 +697,12 @@ const Screens = {
       }
     }
 
-    const btnY = viewH() - (Input.touchMode ? 110 : 90);
+    let btnY = viewH() - (Input.touchMode ? 110 : 90);
+    if (CrazyGamesSdk.enabled()) {
+      const rewardBtn = this.btn("cgReward", "WATCH AD +50 COINS", null, btnY - btnHeight(48) - 12, null, btnHeight(44));
+      drawNeonButton(App.ctx, rewardBtn, "WATCH AD +50 COINS", pointInRect(mousePos, rewardBtn), true);
+      btnY -= btnHeight(48) + 12;
+    }
     if (!infinite) {
       const leaderboardY = canShare ? Math.min(blockY + 8, btnY - 170) : 330;
       drawLeaderboardPanel(App.ctx, save, game.level.id, 80, leaderboardY);
@@ -793,9 +805,12 @@ const Screens = {
         if (PwaInstall.canPromptInstall()) PwaInstall.promptInstall();
         return true;
       }
+      if (this._hit("cgSdk", pos)) { CrazyGamesUi.scrollY = 0; App.state = "cg-sdk"; return true; }
       if (this._hit("back", pos)) { App.state = "menu"; this.waitingKey = null; return true; }
       this._handleSliderDrag(save, pos);
     }
+
+    if (state === "cg-sdk") return CrazyGamesUi.handleClick(pos);
 
     if (state === "howto" && this._hit("back", pos)) { App.state = "menu"; return true; }
 
@@ -820,8 +835,21 @@ const Screens = {
         });
         return true;
       }
-      if (this._hit("next", pos)) { App.startNextLevel(); return true; }
-      if (this._hit("restart", pos)) { App.requestStartGame(App.lastLevel); return true; }
+      if (this._hit("cgReward", pos)) {
+        CrazyGamesHooks.offerRewardedCoins(save, (msg) => {
+          Screens.shareFeedback = msg;
+          setTimeout(() => { Screens.shareFeedback = ""; }, 2500);
+        });
+        return true;
+      }
+      if (this._hit("next", pos)) {
+        CrazyGamesHooks.requestMidgameBefore(() => App.startNextLevel());
+        return true;
+      }
+      if (this._hit("restart", pos)) {
+        CrazyGamesHooks.requestMidgameBefore(() => App.requestStartGame(App.lastLevel));
+        return true;
+      }
     }
 
     return false;
@@ -842,6 +870,9 @@ const Screens = {
           if (this.shopTab === "skins") save.equippedSkin = item.id;
           else save.equippedBackground = item.id;
           writeSave(save);
+          if (CrazyGamesSdk.enabled()) {
+            CrazyGamesSdk.trackOrder({ orderId: `shop-${item.id}`, status: "done" });
+          }
         }
         return true;
       }

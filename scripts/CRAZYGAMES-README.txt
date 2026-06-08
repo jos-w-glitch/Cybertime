@@ -15,7 +15,9 @@ WHAT IS INCLUDED
 REQUIREMENTS (CrazyGames)
 - Initial download should be ≤ 50MB (this build compresses audio for that).
 - index.html must stay at the zip root.
-- Game uses CrazyGames SDK: loading start/stop + gameplay start/stop.
+- Full CrazyGames SDK v2 integrated (ads, banners, game events, user, data, analytics).
+- Settings → SDK PANEL tests every SDK method for QA.
+- Set CRAZYGAMES_LEADERBOARD_ENCRYPTION_KEY in js/crazygames-config.js for leaderboard submit.
 
 LOCAL TEST
 - Serve this folder with any static server, e.g.:
