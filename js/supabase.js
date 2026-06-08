@@ -1,8 +1,11 @@
+const COMMUNITY_MEDIA_BUCKET = "community-media";
+
 const CloudStore = {
   client: null,
   ready: false,
   pin: null,
   leaderboardCache: {},
+  communityCache: null,
 
   init() {
     if (!SUPABASE_ENABLED || typeof supabase === "undefined") return false;
@@ -69,5 +72,48 @@ const CloudStore = {
     const entries = Array.isArray(data) ? data : [];
     this.leaderboardCache[key] = entries;
     return entries;
+  },
+
+  communityPublicUrl(path) {
+    if (!path || !this.client) return null;
+    return this.client.storage.from(COMMUNITY_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  },
+
+  async uploadCommunityFile(prefix, kind, file) {
+    if (!this.ready || !file) return null;
+    const ext = (file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+    const path = `${prefix}/${kind}.${ext}`;
+    const { error } = await this.client.storage.from(COMMUNITY_MEDIA_BUCKET).upload(path, file, {
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+    if (error) throw new Error(error.message || "Upload failed");
+    return { path, url: this.communityPublicUrl(path) };
+  },
+
+  async publishCommunityLevel(playerName, levelMeta) {
+    if (!this.ready || !this.pin) return { ok: false, reason: "Login required" };
+    const { data, error } = await this.client.rpc("publish_community_level", {
+      p_name: playerName,
+      p_pin: this.pin,
+      p_level: levelMeta,
+    });
+    if (error) return { ok: false, reason: "Cloud publish failed" };
+    if (!data?.ok) return { ok: false, reason: data?.reason || "Cloud publish failed" };
+    this.communityCache = null;
+    return { ok: true, id: data.id };
+  },
+
+  async fetchCommunityLevels(search = "") {
+    if (!this.ready) return null;
+    const cacheKey = search.trim().toLowerCase();
+    if (!cacheKey && this.communityCache) return this.communityCache;
+    const { data, error } = await this.client.rpc("list_community_levels", {
+      p_search: search.trim() || null,
+    });
+    if (error) return null;
+    const rows = Array.isArray(data) ? data : [];
+    if (!cacheKey) this.communityCache = rows;
+    return rows;
   },
 };

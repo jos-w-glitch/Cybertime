@@ -8,7 +8,8 @@ const CreatorRewardUi = {
     const draft = CreatorStore.rewardDraft();
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
-    Screens.listMaxScroll = Math.max(0, 780 - (viewH() - 100));
+    const gap = uiBtnGap();
+    Screens.listMaxScroll = Math.max(0, 820 - (viewH() - 100));
     let y = 100 - Screens.scrollY;
 
     App.ctx.font = gameFont(40);
@@ -22,25 +23,25 @@ const CreatorRewardUi = {
       y += 24;
       const nameBtn = Screens.btn("cgrName", draft.name, pad + 12, y, cardW - 24, uiBtnHeight(40));
       drawNeonButton(App.ctx, nameBtn, draft.name, pointInRect(mousePos, nameBtn), true);
-      y += uiBtnHeight(40) + 14;
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
       App.ctx.fillStyle = rgb(COLORS.gold);
       App.ctx.fillText("BACKGROUND — upload image or video", pad + 12, y + 16);
-      y += 24;
+      y += uiBtnGap(24);
       const bgBtn = Screens.btn("cgrBgUpload", draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pad + 12, y, cardW - 24, uiBtnHeight(40));
-      drawNeonButton(App.ctx, bgBtn, draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pointInRect(mousePos, bgBtn), true);
-      y += uiBtnHeight(40) + 10;
+      drawNeonButton(App.ctx, bgBtn, draft.hasMedia ? (draft.mediaFileName || "MEDIA READY") : "UPLOAD BG", pointInRect(mousePos, bgBtn), true);
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
       App.ctx.fillStyle = rgb(COLORS.gold);
       App.ctx.fillText("CURSOR — upload PNG", pad + 12, y + 16);
-      y += 24;
+      y += uiBtnGap(24);
       const curBtn = Screens.btn("cgrCursorUpload", draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pad + 12, y, cardW - 24, uiBtnHeight(40));
       drawNeonButton(App.ctx, curBtn, draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pointInRect(mousePos, curBtn), true);
-      y += uiBtnHeight(40) + 10;
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
@@ -60,10 +61,13 @@ const CreatorRewardUi = {
 
     if (y > 80 && y < viewH()) {
       drawNeonButton(App.ctx, Screens.btn("cgrSave", "SAVE REWARD", pad, y, cardW, uiBtnHeight(44)), "SAVE REWARD", pointInRect(mousePos, Screens.buttons.cgrSave), true);
-      y += uiBtnHeight(44) + 10;
+      y += uiBtnHeight(44) + gap;
       drawNeonButton(App.ctx, Screens.btn("cgrBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgrBack), true);
+      y += uiBtnHeight(40) + uiBtnGap(24);
     }
 
+    Screens.listMaxScroll = Math.max(0, y + Screens.scrollY - (viewH() - 100));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
     Screens.finishButtons();
   },
 
@@ -92,8 +96,12 @@ const CreatorRewardUi = {
     });
     App.ctx.restore();
 
-    drawNeonButton(App.ctx, Screens.btn("cgpNew", "+ NEW REWARD", pad, viewH() - 130, viewW() - pad * 2, uiBtnHeight(40)), "+ NEW REWARD", pointInRect(mousePos, Screens.buttons.cgpNew), true);
-    drawNeonButton(App.ctx, Screens.btn("cgpBack", "BACK", pad, viewH() - 82, viewW() - pad * 2, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgpBack), true);
+    const backH = uiBtnHeight(40);
+    const gap = uiBtnGap(16);
+    const backY = viewH() - uiBtnGap(24) - backH;
+    const newY = backY - gap - backH;
+    drawNeonButton(App.ctx, Screens.btn("cgpNew", "+ NEW REWARD", pad, newY, viewW() - pad * 2, backH), "+ NEW REWARD", pointInRect(mousePos, Screens.buttons.cgpNew), true);
+    drawNeonButton(App.ctx, Screens.btn("cgpBack", "BACK", pad, backY, viewW() - pad * 2, backH), "BACK", pointInRect(mousePos, Screens.buttons.cgpBack), true);
     Screens.finishButtons();
   },
 
@@ -102,25 +110,12 @@ const CreatorRewardUi = {
   },
 
   handlePointerDown(pos) {
-    const draft = CreatorStore.rewardDraft();
     if (Screens._hit("cgrBgUpload", pos)) {
-      CreatorDom.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", async (file) => {
-        try {
-          await CreatorStore.attachRewardBg(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickRewardBgFile();
       return true;
     }
     if (Screens._hit("cgrCursorUpload", pos)) {
-      CreatorDom.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", async (file) => {
-        try {
-          await CreatorStore.attachRewardCursor(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickRewardCursorFile();
       return true;
     }
     return false;

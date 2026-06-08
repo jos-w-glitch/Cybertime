@@ -1,9 +1,18 @@
 const CreatorUi = {
   levelsTab: "main",
   page: "stage",
+  communitySearch: "",
   shareLevelId: null,
   rewardSliders: null,
   draggingRewardSlider: false,
+
+  communitySearchY() {
+    return 108 + uiBtnHeight(40) + uiBtnGap(14);
+  },
+
+  communityListTop() {
+    return this.communitySearchY() + uiBtnHeight(44) + uiBtnGap(12);
+  },
 
   drawMenuSlot(slot, mousePos) {
     Screens.drawMenuSlot("creator", "CREATOR", slot, mousePos);
@@ -26,18 +35,19 @@ const CreatorUi = {
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = Screens.screenPad();
+    const gap = uiBtnGap();
 
     App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
     App.ctx.fillText("SELECT STAGE", pad, 76);
 
-    const tabW = (viewW() - pad * 2 - 12) / 2;
+    const tabW = (viewW() - pad * 2 - gap) / 2;
     const tabY = 108;
     drawNeonButton(App.ctx, Screens.btn("lvMain", "MAIN", pad, tabY, tabW, uiBtnHeight(40)), "MAIN LEVELS", this.levelsTab === "main", true);
-    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + 12, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
+    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + gap, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
 
     if (this.levelsTab === "main") this._drawMainLevels(save, mousePos, pad);
-    else this._drawCommunityLevels(save, mousePos, pad, tabY);
+    else this._drawCommunityLevels(save, mousePos, pad);
 
     Screens.drawActionButton("back", "BACK", Screens.bottomActionY(), mousePos, { small: true });
     Screens.finishButtons();
@@ -68,10 +78,10 @@ const CreatorUi = {
     App.ctx.restore();
   },
 
-  _drawCommunityLevels(save, mousePos, pad, tabY) {
-    const levels = CreatorStore.list();
+  _drawCommunityLevels(save, mousePos, pad) {
+    const levels = CreatorStore.filterLevels(this.communitySearch);
     const rowH = Screens.listRowHeight();
-    const top = tabY + 55;
+    const top = this.communityListTop();
     const play = Screens.playBtnSize();
     Screens.listMaxScroll = Math.max(0, top + (levels.length + 1) * rowH - (viewH() - 90));
     Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
@@ -107,9 +117,7 @@ const CreatorUi = {
     const draft = CreatorStore.draft();
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
-    const rowH = 64;
-    const contentH = 720;
-    Screens.listMaxScroll = Math.max(0, contentH - (viewH() - 100));
+    const gap = uiBtnGap();
     const scroll = Screens.scrollY;
     let y = 100 - scroll;
 
@@ -118,7 +126,8 @@ const CreatorUi = {
     App.ctx.fillText("CREATE STAGE", pad, 72);
 
     y = this._rowLabel("STAGE NAME", pad, y, cardW);
-    const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: uiBtnHeight(40) };
+    const nameH = uiBtnHeight(40);
+    const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: nameH };
     Screens.btn("cgNameField", "NAME", nameRect.x, nameRect.y, nameRect.w, nameRect.h);
     App.ctx.fillStyle = "rgba(18,18,28,0.85)";
     roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
@@ -129,53 +138,79 @@ const CreatorUi = {
     App.ctx.stroke();
     App.ctx.font = uiFont(20);
     App.ctx.fillStyle = rgb(draft.name ? COLORS.text : COLORS.gray);
-    const nameText = draft.name || "Tap to enter name…";
-    App.ctx.fillText(nameText, nameRect.x + 14, nameRect.y + 26);
-    y += uiBtnHeight(40) + 14;
+    App.ctx.fillText(draft.name || "Tap to enter name…", nameRect.x + 14, nameRect.y + nameH * 0.62);
+    y += nameH + gap;
 
     y = this._rowLabel("BPM", pad, y, cardW);
+    const bpmH = uiBtnHeight(40);
     const bpmY = y;
-    drawNeonButton(App.ctx, Screens.btn("cgBpmDown", "◀", pad, bpmY, 52, uiBtnHeight(40)), "◀", pointInRect(mousePos, Screens.buttons.cgBpmDown), true);
+    drawNeonButton(App.ctx, Screens.btn("cgBpmDown", "◀", pad, bpmY, 52, bpmH), "◀", pointInRect(mousePos, Screens.buttons.cgBpmDown), true);
     App.ctx.font = gameFont(28);
     App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(String(draft.bpm), pad + 70, bpmY + 28);
-    drawNeonButton(App.ctx, Screens.btn("cgBpmUp", "▶", pad + 130, bpmY, 52, uiBtnHeight(40)), "▶", pointInRect(mousePos, Screens.buttons.cgBpmUp), true);
-    y += uiBtnHeight(40) + 14;
+    App.ctx.fillText(String(draft.bpm), pad + 70, bpmY + bpmH * 0.68);
+    drawNeonButton(App.ctx, Screens.btn("cgBpmUp", "▶", pad + 130, bpmY, 52, bpmH), "▶", pointInRect(mousePos, Screens.buttons.cgBpmUp), true);
+    y += bpmH + gap;
 
     y = this._rowLabel("MECHANICS", pad, y, cardW);
+    const mechH = uiBtnHeight(36);
     for (const item of CREATOR_MECH_KEYS) {
       if (item.needs && !draft.mechanics[item.needs]) continue;
       const on = !!draft.mechanics[item.key];
-      const box = Screens.btn(`cgMech-${item.key}`, on ? "ON" : "OFF", pad + 12, y, cardW - 24, uiBtnHeight(36));
+      const box = Screens.btn(`cgMech-${item.key}`, on ? "ON" : "OFF", pad + 12, y, cardW - 24, mechH);
       drawNeonButton(App.ctx, box, `${on ? "☑" : "☐"} ${item.label}`, pointInRect(mousePos, box), true);
-      y += uiBtnHeight(36) + 8;
+      y += mechH + uiBtnGap(8);
     }
-    y += 6;
+    y += uiBtnGap(6);
 
     y = this._rowLabel("MUSIC", pad, y, cardW);
     const track = getLevelById(draft.musicTrackId || 1);
-    const musicLabel = draft.musicSource === "upload" ? "CUSTOM UPLOAD" : `${track.id}. ${track.name}`;
-    drawNeonButton(App.ctx, Screens.btn("cgTrackDown", "◀", pad, y, 52, uiBtnHeight(36)), "◀", pointInRect(mousePos, Screens.buttons.cgTrackDown), true);
+    const trackH = uiBtnHeight(36);
+    const musicLabel = draft.musicSource === "upload"
+      ? (draft.musicFileName || "CUSTOM UPLOAD")
+      : `${track.id}. ${track.name}`;
+    drawNeonButton(App.ctx, Screens.btn("cgTrackDown", "◀", pad, y, 52, trackH), "◀", pointInRect(mousePos, Screens.buttons.cgTrackDown), true);
     App.ctx.font = uiFont(18);
     App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(musicLabel, pad + 70, y + 24);
-    drawNeonButton(App.ctx, Screens.btn("cgTrackUp", "▶", pad + cardW - 64, y, 52, uiBtnHeight(36)), "▶", pointInRect(mousePos, Screens.buttons.cgTrackUp), true);
-    y += uiBtnHeight(36) + 8;
-    drawNeonButton(App.ctx, Screens.btn("cgMusic", "UPLOAD MP3", pad + 12, y, cardW - 24, uiBtnHeight(36)), "UPLOAD MP3", pointInRect(mousePos, Screens.buttons.cgMusic), true);
-    y += uiBtnHeight(36) + 14;
+    App.ctx.fillText(musicLabel, pad + 70, y + trackH * 0.66);
+    drawNeonButton(App.ctx, Screens.btn("cgTrackUp", "▶", pad + cardW - 64, y, 52, trackH), "▶", pointInRect(mousePos, Screens.buttons.cgTrackUp), true);
+    y += trackH + uiBtnGap(8);
+    drawNeonButton(App.ctx, Screens.btn("cgMusic", "UPLOAD MP3", pad + 12, y, cardW - 24, trackH), "UPLOAD MP3", pointInRect(mousePos, Screens.buttons.cgMusic), true);
+    y += trackH + uiBtnGap(6);
+    const status = CreatorDom.getUploadStatus();
+    if (status && y > 90 && y < viewH()) {
+      App.ctx.font = uiFont(14);
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText(status, pad + 12, y + 14);
+      y += uiBtnGap(20);
+    } else {
+      y += uiBtnGap(8);
+    }
 
     y = this._rowLabel("REWARD", pad, y, cardW);
     const reward = CreatorStore.getReward(draft.rewardId);
     const rewardLine = reward ? reward.name : "None selected";
-    drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 140, uiBtnHeight(40)), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
-    drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + cardW - 120, y, 108, uiBtnHeight(40)), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
-    y += uiBtnHeight(40) + 14;
+    const rewardH = uiBtnHeight(40);
+    if (Input.touchMode) {
+      drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 24, rewardH), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
+      y += rewardH + uiBtnGap(8);
+      drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + 12, y, cardW - 24, rewardH), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
+      y += rewardH + gap;
+    } else {
+      drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 140, rewardH), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
+      drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + cardW - 120, y, 108, rewardH), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
+      y += rewardH + gap;
+    }
 
-    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST", pad, y, (cardW - 12) / 2, uiBtnHeight(44)), "TEST", pointInRect(mousePos, Screens.buttons.cgTest), true);
-    drawNeonButton(App.ctx, Screens.btn("cgPublish", "PUBLISH", pad + (cardW + 12) / 2, y, (cardW - 12) / 2, uiBtnHeight(44)), "PUBLISH", pointInRect(mousePos, Screens.buttons.cgPublish), true);
-    y += uiBtnHeight(44) + 10;
-    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+    const actionH = uiBtnHeight(44);
+    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST", pad, y, (cardW - gap) / 2, actionH), "TEST", pointInRect(mousePos, Screens.buttons.cgTest), true);
+    drawNeonButton(App.ctx, Screens.btn("cgPublish", "PUBLISH", pad + (cardW + gap) / 2, y, (cardW - gap) / 2, actionH), "PUBLISH", pointInRect(mousePos, Screens.buttons.cgPublish), true);
+    y += actionH + uiBtnGap(10);
+    const backH = uiBtnHeight(40);
+    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, backH), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+    y += backH + uiBtnGap(24);
 
+    Screens.listMaxScroll = Math.max(0, y + scroll - (viewH() - 100));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
     Screens.finishButtons();
   },
 
@@ -184,27 +219,37 @@ const CreatorUi = {
     App.ctx.font = uiFont(16);
     App.ctx.fillStyle = rgb(COLORS.gold);
     App.ctx.fillText(text, pad + 12, y + 16);
-    return y + 24;
+    return y + uiBtnGap(24);
   },
 
   async launchCommunity(meta) {
-    const musicUrl = meta.musicSource === "upload" && meta.hasMusic ? await CreatorStore.getMusicUrl(meta.id) : null;
+    let musicUrl = null;
+    if (meta.musicSource === "upload" && meta.hasMusic) {
+      musicUrl = meta.musicPublicUrl || await CreatorStore.getMusicUrl(meta.id);
+    }
     App.launchGame(applyCreatorDraftToLevel(meta, musicUrl));
   },
 
   async testDraft() {
-    const draft = { ...CreatorStore.draft(), id: "test", author: "Test" };
+    const draft = { ...CreatorStore.draft(), author: "Test" };
+    if (!draft.id) draft.id = `test_${Date.now()}`;
     let musicUrl = null;
     if (draft.musicSource === "upload") {
       if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
-      else if (draft.hasMusic && draft.id) musicUrl = await CreatorStore.getMusicUrl(draft.id);
+      else if (draft.musicPublicUrl) musicUrl = draft.musicPublicUrl;
+      else if (draft.hasMusic) musicUrl = await CreatorStore.getMusicUrl(draft.id);
     }
     App.launchGame(applyCreatorDraftToLevel(draft, musicUrl));
   },
 
   handleLevelsClick(save, pos) {
     if (this._hit("lvMain", pos)) { this.levelsTab = "main"; Screens.resetScroll(); return true; }
-    if (this._hit("lvCommunity", pos)) { this.levelsTab = "community"; Screens.resetScroll(); return true; }
+    if (this._hit("lvCommunity", pos)) {
+      this.levelsTab = "community";
+      Screens.resetScroll();
+      CreatorStore.refreshCommunitySearch(this.communitySearch).catch(() => {});
+      return true;
+    }
     if (this.levelsTab === "main") {
       for (const level of LEVELS) {
         if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
@@ -216,12 +261,13 @@ const CreatorUi = {
     }
     if (this._hit("openCreator", pos)) {
       CreatorStore.resetDraft();
+      CreatorDom.setUploadStatus("");
       this.page = "stage";
       Screens.resetScroll();
       App.state = "creator";
       return true;
     }
-    for (const meta of CreatorStore.list()) {
+    for (const meta of CreatorStore.filterLevels(this.communitySearch)) {
       if (this._hit(`clevel-${meta.id}`, pos)) { this.launchCommunity(meta); return true; }
     }
     return false;
@@ -240,13 +286,7 @@ const CreatorUi = {
       return true;
     }
     if (this._hit("cgMusic", pos)) {
-      CreatorDom.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", async (file) => {
-        try {
-          await CreatorStore.attachMusic(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickMusicFile();
       return true;
     }
     return false;
@@ -264,14 +304,20 @@ const CreatorUi = {
     if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
     if (this._hit("cgPublish", pos)) {
-      const name = draft.name?.trim() || "MY STAGE";
-      draft.name = name;
-      CreatorStore.saveDraft().then((id) => {
-        CreatorDom.showShareModal(name || "My Stage", id);
-        App.state = "levels";
-        this.levelsTab = "community";
-        this.page = "stage";
-      });
+      if (!draft.name?.trim()) {
+        CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
+        return true;
+      }
+      const stageName = draft.name.trim();
+      CreatorDom.setUploadStatus("Publishing…");
+      CreatorStore.publishLevel()
+        .then((id) => {
+          CreatorDom.showShareModal(stageName, id);
+          App.state = "levels";
+          this.levelsTab = "community";
+          this.page = "stage";
+        })
+        .catch((err) => CreatorDom.setUploadStatus(err.message || "Publish failed"));
       return true;
     }
     for (const item of CREATOR_MECH_KEYS) {

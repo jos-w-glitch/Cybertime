@@ -209,18 +209,54 @@
       z-index: 200;
       pointer-events: none;
     }
-    #creator-name-modal {
+    #creator-name-overlay {
       position: fixed;
       inset: 0;
-      z-index: 400;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(10, 10, 18, 0.92);
+      background: #0a0a12;
+      z-index: 200;
       pointer-events: auto;
     }
-    #creator-name-modal.hidden { display: none !important; }
-    #creator-name-modal .name-input { width: 100%; margin-bottom: 12px; }
+    #creator-name-overlay.hidden { display: none !important; pointer-events: none; }
+    #creator-name-panel { width: min(440px, 94vw); padding: 28px 32px 36px; text-align: center; }
+    #creator-name-title { color: #00b4ff; font-size: 1.4rem; margin-bottom: 12px; }
+    #creator-name-error { min-height: 22px; color: #ff0064; font-size: 0.9rem; margin-bottom: 8px; }
+    #creator-name-save {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 8px;
+      background: #00b478;
+      color: #0a0a12;
+      font-family: inherit;
+      font-size: 1.1rem;
+      font-weight: bold;
+      cursor: pointer;
+    }
+    #creator-name-cancel {
+      width: 100%;
+      padding: 12px;
+      margin-top: 10px;
+      border: 2px solid #3c3c4b;
+      border-radius: 8px;
+      background: transparent;
+      color: #8090a0;
+      font-family: inherit;
+      font-size: 1rem;
+      cursor: pointer;
+    }
+    #community-search-wrap {
+      position: fixed;
+      z-index: 120;
+      pointer-events: auto;
+    }
+    #community-search-wrap.hidden { display: none !important; pointer-events: none; }
+    #community-search { margin-bottom: 0; }
+    body.creator-form-open #wrapper { pointer-events: none !important; }
+    body.creator-form-open #community-search-wrap { pointer-events: none; }
+    #creator-file-inputs { position: fixed; left: -9999px; width: 1px; height: 1px; overflow: hidden; opacity: 0.01; pointer-events: none; }
     #creator-share-modal {
       position: fixed;
       inset: 0;
@@ -285,12 +321,25 @@
   <div id="wrapper">
     <canvas id="game" width="1280" height="720"></canvas>
   </div>
-  <div id="creator-name-modal" class="hidden">
-    <div class="share-card">
-      <h2>STAGE NAME</h2>
-      <input id="creator-name-input" class="name-input" type="text" maxlength="24" placeholder="Enter stage name" autocomplete="off">
-      <button id="creator-name-ok" type="button">OK</button>
+  <div id="community-search-wrap" class="hidden">
+    <input id="community-search" class="name-input" type="search" maxlength="32" placeholder="Search community stages…" autocomplete="off">
+  </div>
+  <div id="creator-name-overlay" class="hidden">
+    <div id="creator-name-panel">
+      <div id="creator-name-title">STAGE NAME</div>
+      <p style="color:#8090a0;font-size:0.9rem;margin-bottom:16px;">Name your stage for Community Levels</p>
+      <form id="creator-name-form" action="#" onsubmit="return false;">
+        <input id="creator-stage-name" class="name-input" type="text" maxlength="24" placeholder="Enter stage name" autocomplete="off">
+        <div id="creator-name-error"></div>
+        <button id="creator-name-save" type="button">SAVE NAME</button>
+        <button id="creator-name-cancel" type="button">CANCEL</button>
+      </form>
     </div>
+  </div>
+  <div id="creator-file-inputs">
+    <input id="creator-file-music" type="file" accept="audio/*,audio/mpeg,audio/mp3,.mp3">
+    <input id="creator-file-bg" type="file" accept="image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm">
+    <input id="creator-file-cursor" type="file" accept="image/png,image/jpeg,image/webp,.png,.jpg">
   </div>
   <div id="creator-share-modal" class="hidden">
     <div class="share-card">

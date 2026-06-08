@@ -1,21 +1,67 @@
 const CreatorDom = {
   _nameSaveCb: null,
+  _uploadStatus: "",
 
   init() {
-    document.getElementById("creator-name-ok")?.addEventListener("click", (e) => {
+    document.getElementById("creator-name-save")?.addEventListener("click", (e) => {
       e.preventDefault();
       this._saveNameEditor();
     });
-    document.getElementById("creator-name-input")?.addEventListener("keydown", (e) => {
+    document.getElementById("creator-name-cancel")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.closeNameEditor();
+    });
+    document.getElementById("creator-name-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      this._saveNameEditor();
+    });
+    document.getElementById("creator-stage-name")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         this._saveNameEditor();
       }
     });
 
+    document.getElementById("creator-file-music")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleMusicFile(file);
+    });
+    document.getElementById("creator-file-bg")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardBgFile(file);
+    });
+    document.getElementById("creator-file-cursor")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardCursorFile(file);
+    });
+
+    document.getElementById("community-search")?.addEventListener("input", (e) => {
+      CreatorUi.communitySearch = e.target.value || "";
+      Screens.resetScroll();
+      CreatorStore.refreshCommunitySearch(CreatorUi.communitySearch).catch(() => {});
+    });
+
     document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
     document.getElementById("creator-share-native")?.addEventListener("click", () => this._nativeShare());
     document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
+  },
+
+  syncOverlays() {
+    const searchWrap = document.getElementById("community-search-wrap");
+    const showSearch = App.state === "levels" && CreatorUi.levelsTab === "community";
+    searchWrap?.classList.toggle("hidden", !showSearch);
+    if (!showSearch || !searchWrap || !App.canvas) return;
+
+    const rect = App.canvas.getBoundingClientRect();
+    const scaleY = rect.height / viewH();
+    const scaleX = rect.width / viewW();
+    const searchY = CreatorUi.communitySearchY();
+    searchWrap.style.left = `${rect.left + Screens.screenPad() * scaleX}px`;
+    searchWrap.style.width = `${rect.width - Screens.screenPad() * 2 * scaleX}px`;
+    searchWrap.style.top = `${rect.top + searchY * scaleY}px`;
   },
 
   pickFile(accept, onPick) {
@@ -33,27 +79,100 @@ const CreatorDom = {
     input.click();
   },
 
+  pickMusicFile() {
+    const el = document.getElementById("creator-file-music");
+    if (el) el.click();
+    else this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
+  },
+
+  pickRewardBgFile() {
+    const el = document.getElementById("creator-file-bg");
+    if (el) el.click();
+    else this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
+  },
+
+  pickRewardCursorFile() {
+    const el = document.getElementById("creator-file-cursor");
+    if (el) el.click();
+    else this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
+  },
+
+  async _handleMusicFile(file) {
+    this.setUploadStatus("Saving music…");
+    try {
+      await CreatorStore.attachMusic(file);
+      const draft = CreatorStore.draft();
+      const cloud = draft.musicPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Music ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Music upload failed");
+    }
+  },
+
+  async _handleRewardBgFile(file) {
+    this.setUploadStatus("Saving background…");
+    try {
+      await CreatorStore.attachRewardBg(file);
+      const draft = CreatorStore.rewardDraft();
+      const cloud = draft.bgPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Background ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Background upload failed");
+    }
+  },
+
+  async _handleRewardCursorFile(file) {
+    this.setUploadStatus("Saving cursor…");
+    try {
+      await CreatorStore.attachRewardCursor(file);
+      const draft = CreatorStore.rewardDraft();
+      const cloud = draft.cursorPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Cursor ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Cursor upload failed");
+    }
+  },
+
+  setUploadStatus(message) {
+    this._uploadStatus = message || "";
+  },
+
+  getUploadStatus() {
+    return this._uploadStatus;
+  },
+
   openNameEditor(value, onSave) {
-    const modal = document.getElementById("creator-name-modal");
-    const input = document.getElementById("creator-name-input");
-    if (!modal || !input) return;
+    const overlay = document.getElementById("creator-name-overlay");
+    const input = document.getElementById("creator-stage-name");
+    const error = document.getElementById("creator-name-error");
+    if (!overlay || !input) return;
     this._nameSaveCb = onSave;
+    if (error) error.textContent = "";
     input.value = value || "";
-    modal.classList.remove("hidden");
+    overlay.classList.remove("hidden");
+    document.body.classList.add("creator-form-open");
     setTimeout(() => {
       input.focus();
       input.select();
-    }, 0);
+    }, 50);
   },
 
   closeNameEditor() {
-    document.getElementById("creator-name-modal")?.classList.add("hidden");
+    document.getElementById("creator-name-overlay")?.classList.add("hidden");
+    document.body.classList.remove("creator-form-open");
+    const error = document.getElementById("creator-name-error");
+    if (error) error.textContent = "";
     this._nameSaveCb = null;
   },
 
   _saveNameEditor() {
-    const input = document.getElementById("creator-name-input");
+    const input = document.getElementById("creator-stage-name");
     const name = input?.value?.trim().slice(0, 24) || "";
+    if (!name) {
+      const error = document.getElementById("creator-name-error");
+      if (error) error.textContent = "Enter a stage name";
+      return;
+    }
     if (this._nameSaveCb) this._nameSaveCb(name);
     CreatorStore.draft().name = name;
     this.closeNameEditor();

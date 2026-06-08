@@ -38,7 +38,11 @@ function btnHeight(size = 52) {
 }
 
 function uiBtnHeight(size = 48) {
-  return Math.round(size);
+  return Math.round(size * mobileUiScale() * accessibilityScale());
+}
+
+function uiBtnGap(size = 12) {
+  return Math.round(size * mobileUiScale());
 }
 
 function iconButtonSize() {

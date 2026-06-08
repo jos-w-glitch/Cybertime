@@ -38,7 +38,11 @@ function btnHeight(size = 52) {
 }
 
 function uiBtnHeight(size = 48) {
-  return Math.round(size);
+  return Math.round(size * mobileUiScale() * accessibilityScale());
+}
+
+function uiBtnGap(size = 12) {
+  return Math.round(size * mobileUiScale());
 }
 
 function iconButtonSize() {
@@ -438,11 +442,14 @@ const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_zFPc1xq1itMoRzFq-M-zTg_F_T6tgiF
 const SUPABASE_ANON_KEY = SUPABASE_PUBLISHABLE_KEY;
 
 const SUPABASE_ENABLED = Boolean(SUPABASE_URL && SUPABASE_PUBLISHABLE_KEY);
+const COMMUNITY_MEDIA_BUCKET = "community-media";
+
 const CloudStore = {
   client: null,
   ready: false,
   pin: null,
   leaderboardCache: {},
+  communityCache: null,
 
   init() {
     if (!SUPABASE_ENABLED || typeof supabase === "undefined") return false;
@@ -509,6 +516,49 @@ const CloudStore = {
     const entries = Array.isArray(data) ? data : [];
     this.leaderboardCache[key] = entries;
     return entries;
+  },
+
+  communityPublicUrl(path) {
+    if (!path || !this.client) return null;
+    return this.client.storage.from(COMMUNITY_MEDIA_BUCKET).getPublicUrl(path).data.publicUrl;
+  },
+
+  async uploadCommunityFile(prefix, kind, file) {
+    if (!this.ready || !file) return null;
+    const ext = (file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+    const path = `${prefix}/${kind}.${ext}`;
+    const { error } = await this.client.storage.from(COMMUNITY_MEDIA_BUCKET).upload(path, file, {
+      upsert: true,
+      contentType: file.type || undefined,
+    });
+    if (error) throw new Error(error.message || "Upload failed");
+    return { path, url: this.communityPublicUrl(path) };
+  },
+
+  async publishCommunityLevel(playerName, levelMeta) {
+    if (!this.ready || !this.pin) return { ok: false, reason: "Login required" };
+    const { data, error } = await this.client.rpc("publish_community_level", {
+      p_name: playerName,
+      p_pin: this.pin,
+      p_level: levelMeta,
+    });
+    if (error) return { ok: false, reason: "Cloud publish failed" };
+    if (!data?.ok) return { ok: false, reason: data?.reason || "Cloud publish failed" };
+    this.communityCache = null;
+    return { ok: true, id: data.id };
+  },
+
+  async fetchCommunityLevels(search = "") {
+    if (!this.ready) return null;
+    const cacheKey = search.trim().toLowerCase();
+    if (!cacheKey && this.communityCache) return this.communityCache;
+    const { data, error } = await this.client.rpc("list_community_levels", {
+      p_search: search.trim() || null,
+    });
+    if (error) return null;
+    const rows = Array.isArray(data) ? data : [];
+    if (!cacheKey) this.communityCache = rows;
+    return rows;
   },
 };
 const DEVICE_SESSION_KEY = "cybertime-device-session";
@@ -3211,6 +3261,53 @@ const CreatorStore = {
 
   async init() {
     await this._loadAll();
+    await this.refreshCommunitySearch("");
+  },
+
+  async refreshCommunitySearch(search) {
+    if (!CloudStore.enabled()) return;
+    const remote = await CloudStore.fetchCommunityLevels(search);
+    if (remote) this._mergeRemoteLevels(remote);
+  },
+
+  filterLevels(search) {
+    const q = (search || "").trim().toLowerCase();
+    const all = this.list();
+    if (!q) return all;
+    return all.filter((level) =>
+      level.name?.toLowerCase().includes(q) || (level.author || "").toLowerCase().includes(q)
+    );
+  },
+
+  _mergeRemoteLevels(rows) {
+    if (!Array.isArray(rows)) return;
+    const byId = new Map(this._levels.map((level) => [level.id, level]));
+    for (const row of rows) {
+      const meta = this._remoteToMeta(row);
+      if (meta?.id) byId.set(meta.id, meta);
+    }
+    this._levels = Array.from(byId.values());
+  },
+
+  _remoteToMeta(row) {
+    const base = row.level_json && typeof row.level_json === "object" ? row.level_json : {};
+    return {
+      ...defaultCreatorDraft(),
+      ...base,
+      id: row.id,
+      name: row.name || base.name || "MY STAGE",
+      author: row.author || row.author_name || base.author || "Creator",
+      createdAt: row.createdAt || Date.now(),
+      musicPublicUrl: row.music_url || base.musicPublicUrl || null,
+      rewardMediaUrl: row.reward_media_url || base.rewardMediaUrl || null,
+      rewardCursorUrl: row.reward_cursor_url || base.rewardCursorUrl || null,
+      musicSource: base.musicSource || (row.music_url ? "upload" : "track"),
+      hasMusic: !!(row.music_url || base.hasMusic),
+    };
+  },
+
+  getById(id) {
+    return this._levels.find((level) => level.id === id) || null;
   },
 
   list() {
@@ -3225,6 +3322,69 @@ const CreatorStore = {
     return this._rewards.find((r) => r.id === id) || null;
   },
 
+  async publishLevel() {
+    const draft = this.draft();
+    if (!draft.name?.trim()) throw new Error("Enter a stage name");
+    const id = await this.saveDraft();
+    const meta = this.getById(id);
+    if (!meta) return id;
+
+    const rewardUrls = await this._resolveRewardCloudUrls(meta);
+    meta.rewardMediaUrl = rewardUrls.rewardMediaUrl;
+    meta.rewardCursorUrl = rewardUrls.rewardCursorUrl;
+    if (meta.musicSource === "upload" && !meta.musicPublicUrl) {
+      const blob = await this._getMusic(id);
+      if (blob) meta.musicPublicUrl = await this._uploadToCloud(id, "music", blob);
+    }
+    await this._putLevel(meta);
+
+    if (CloudStore.enabled() && Auth.isLoggedIn()) {
+      const result = await CloudStore.publishCommunityLevel(Auth.displayName, this._cloudPayload(meta));
+      if (!result?.ok) throw new Error(result?.reason || "Cloud publish failed");
+      await this.refreshCommunitySearch(CreatorUi.communitySearch || "");
+      CreatorDom.setUploadStatus("Published to Community!");
+    } else if (CloudStore.enabled()) {
+      CreatorDom.setUploadStatus("Saved locally — login to share online");
+    }
+    return id;
+  },
+
+  _cloudPayload(meta) {
+    return {
+      ...meta,
+      musicPublicUrl: meta.musicPublicUrl || "",
+      rewardMediaUrl: meta.rewardMediaUrl || "",
+      rewardCursorUrl: meta.rewardCursorUrl || "",
+    };
+  },
+
+  async _resolveRewardCloudUrls(meta) {
+    const reward = this.getReward(meta.rewardId);
+    if (!reward) return { rewardMediaUrl: null, rewardCursorUrl: null };
+    let rewardMediaUrl = reward.bgPublicUrl || meta.rewardMediaUrl || null;
+    let rewardCursorUrl = reward.cursorPublicUrl || meta.rewardCursorUrl || null;
+    if (reward.mediaId && !rewardMediaUrl) {
+      const blob = await this._getMedia(reward.mediaId);
+      if (blob) rewardMediaUrl = await this._uploadToCloud(meta.id, "reward-bg", blob);
+    }
+    if (reward.cursorId && !rewardCursorUrl) {
+      const blob = await this._getMedia(reward.cursorId);
+      if (blob) rewardCursorUrl = await this._uploadToCloud(meta.id, "reward-cursor", blob);
+    }
+    return { rewardMediaUrl, rewardCursorUrl };
+  },
+
+  async _uploadToCloud(prefix, kind, file) {
+    if (!CloudStore.enabled()) return null;
+    try {
+      const result = await CloudStore.uploadCommunityFile(prefix, kind, file);
+      return result?.url || null;
+    } catch (err) {
+      console.warn("Cloud upload failed", err);
+      return null;
+    }
+  },
+
   async saveDraft() {
     const draft = { ...this._draft };
     const pendingMusic = draft._pendingMusic;
@@ -3237,6 +3397,9 @@ const CreatorStore = {
       await this._putMusic(draft.id, pendingMusic);
       draft.hasMusic = true;
       draft.musicSource = "upload";
+      if (!draft.musicPublicUrl) {
+        draft.musicPublicUrl = await this._uploadToCloud(draft.id, "music", pendingMusic);
+      }
     }
     const reward = this.getReward(draft.rewardId);
     if (reward) {
@@ -3245,6 +3408,7 @@ const CreatorStore = {
       draft.rewardGrid = [...reward.grid];
       draft.rewardAccent = [...reward.accent];
       draft.rewardMediaId = reward.mediaId || null;
+      draft.rewardMediaUrl = reward.bgPublicUrl || null;
     }
     await this._putLevel(draft);
     await this._loadAll();
@@ -3266,11 +3430,13 @@ const CreatorStore = {
       draft.mediaType = pendingBg.type.startsWith("video") ? "video" : "image";
       await this._putMedia(draft.mediaId, pendingBg);
       draft.hasMedia = true;
+      draft.bgPublicUrl = await this._uploadToCloud(draft.id, "reward-bg", pendingBg);
     }
     if (pendingCursor) {
       draft.cursorId = `${draft.id}-cursor`;
       await this._putMedia(draft.cursorId, pendingCursor);
       draft.hasCursor = true;
+      draft.cursorPublicUrl = await this._uploadToCloud(draft.id, "reward-cursor", pendingCursor);
     }
     await this._putReward(draft);
     await this._loadAll();
@@ -3281,27 +3447,49 @@ const CreatorStore = {
   async attachMusic(file) {
     if (!file || file.size > CREATOR_MUSIC_MAX) throw new Error("Music too large (max 8MB)");
     const draft = this.draft();
+    if (!draft.id) draft.id = `c_${Date.now()}`;
     draft._pendingMusic = file;
+    draft.musicFileName = file.name;
     draft.hasMusic = true;
     draft.musicSource = "upload";
+    await this._putMusic(draft.id, file);
+    draft._pendingMusic = null;
+    draft.musicPublicUrl = await this._uploadToCloud(draft.id, "music", file);
+    return draft;
   },
 
   async attachRewardBg(file) {
     if (!file || file.size > CREATOR_MEDIA_MAX) throw new Error("File too large (max 12MB)");
     const draft = this.rewardDraft();
+    if (!draft.id) draft.id = `r_${Date.now()}`;
     draft._pendingBg = file;
+    draft.mediaFileName = file.name;
     draft.hasMedia = true;
+    draft.mediaId = `${draft.id}-bg`;
+    draft.mediaType = file.type.startsWith("video") ? "video" : "image";
+    await this._putMedia(draft.mediaId, file);
+    draft._pendingBg = null;
+    draft.bgPublicUrl = await this._uploadToCloud(draft.id, "reward-bg", file);
+    return draft;
   },
 
   async attachRewardCursor(file) {
     if (!file || !file.type.startsWith("image/")) throw new Error("Cursor must be PNG/JPG");
     if (file.size > 2 * 1024 * 1024) throw new Error("Cursor image max 2MB");
     const draft = this.rewardDraft();
+    if (!draft.id) draft.id = `r_${Date.now()}`;
     draft._pendingCursor = file;
     draft.hasCursor = true;
+    draft.cursorId = `${draft.id}-cursor`;
+    await this._putMedia(draft.cursorId, file);
+    draft._pendingCursor = null;
+    draft.cursorPublicUrl = await this._uploadToCloud(draft.id, "reward-cursor", file);
+    return draft;
   },
 
   async getMusicUrl(levelId) {
+    const meta = this.getById(levelId);
+    if (meta?.musicPublicUrl) return meta.musicPublicUrl;
     if (this._musicUrls.has(levelId)) return this._musicUrls.get(levelId);
     const blob = await this._getMusic(levelId);
     if (!blob) return null;
@@ -3410,11 +3598,14 @@ function defaultCreatorDraft() {
     musicSource: "track",
     musicTrackId: 3,
     hasMusic: false,
+    musicFileName: "",
+    musicPublicUrl: null,
     rewardId: null,
     rewardName: "STAGE REWARD",
     rewardBg: [18, 8, 32],
     rewardGrid: [60, 30, 90],
     rewardAccent: [255, 80, 180],
+    rewardMediaUrl: null,
     createdAt: 0,
     author: "",
   };
@@ -3432,6 +3623,9 @@ function defaultRewardDraft() {
     mediaId: null,
     cursorId: null,
     mediaType: null,
+    mediaFileName: "",
+    bgPublicUrl: null,
+    cursorPublicUrl: null,
     createdAt: 0,
   };
 }
@@ -3444,7 +3638,7 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     id: meta.id,
     communityId: meta.id,
     community: true,
-    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || null) : null,
+    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || meta.musicPublicUrl || null) : null,
     musicSourceId: meta.musicSource === "track" ? `track${meta.musicTrackId || 1}` : null,
     name: meta.name?.trim() || "MY STAGE",
     bpm: meta.bpm,
@@ -3471,7 +3665,13 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     rewardGrid: meta.rewardGrid,
     rewardAccent: meta.rewardAccent,
     rewardMediaId: meta.rewardMediaId || null,
-    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent, mediaId: meta.rewardMediaId || null },
+    playBg: {
+      bg: meta.rewardBg,
+      grid: meta.rewardGrid,
+      accent: meta.rewardAccent,
+      mediaId: meta.rewardMediaId || null,
+      mediaUrl: meta.rewardMediaUrl || null,
+    },
   };
   return level;
 }
@@ -3512,25 +3712,73 @@ function cycleCreatorTrack(draft, delta) {
   draft.musicSource = "track";
   draft.hasMusic = false;
   draft._pendingMusic = null;
+  draft.musicFileName = "";
+  draft.musicPublicUrl = null;
 }
 const CreatorDom = {
   _nameSaveCb: null,
+  _uploadStatus: "",
 
   init() {
-    document.getElementById("creator-name-ok")?.addEventListener("click", (e) => {
+    document.getElementById("creator-name-save")?.addEventListener("click", (e) => {
       e.preventDefault();
       this._saveNameEditor();
     });
-    document.getElementById("creator-name-input")?.addEventListener("keydown", (e) => {
+    document.getElementById("creator-name-cancel")?.addEventListener("click", (e) => {
+      e.preventDefault();
+      this.closeNameEditor();
+    });
+    document.getElementById("creator-name-form")?.addEventListener("submit", (e) => {
+      e.preventDefault();
+      this._saveNameEditor();
+    });
+    document.getElementById("creator-stage-name")?.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
         e.preventDefault();
         this._saveNameEditor();
       }
     });
 
+    document.getElementById("creator-file-music")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleMusicFile(file);
+    });
+    document.getElementById("creator-file-bg")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardBgFile(file);
+    });
+    document.getElementById("creator-file-cursor")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardCursorFile(file);
+    });
+
+    document.getElementById("community-search")?.addEventListener("input", (e) => {
+      CreatorUi.communitySearch = e.target.value || "";
+      Screens.resetScroll();
+      CreatorStore.refreshCommunitySearch(CreatorUi.communitySearch).catch(() => {});
+    });
+
     document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
     document.getElementById("creator-share-native")?.addEventListener("click", () => this._nativeShare());
     document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
+  },
+
+  syncOverlays() {
+    const searchWrap = document.getElementById("community-search-wrap");
+    const showSearch = App.state === "levels" && CreatorUi.levelsTab === "community";
+    searchWrap?.classList.toggle("hidden", !showSearch);
+    if (!showSearch || !searchWrap || !App.canvas) return;
+
+    const rect = App.canvas.getBoundingClientRect();
+    const scaleY = rect.height / viewH();
+    const scaleX = rect.width / viewW();
+    const searchY = CreatorUi.communitySearchY();
+    searchWrap.style.left = `${rect.left + Screens.screenPad() * scaleX}px`;
+    searchWrap.style.width = `${rect.width - Screens.screenPad() * 2 * scaleX}px`;
+    searchWrap.style.top = `${rect.top + searchY * scaleY}px`;
   },
 
   pickFile(accept, onPick) {
@@ -3548,27 +3796,100 @@ const CreatorDom = {
     input.click();
   },
 
+  pickMusicFile() {
+    const el = document.getElementById("creator-file-music");
+    if (el) el.click();
+    else this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
+  },
+
+  pickRewardBgFile() {
+    const el = document.getElementById("creator-file-bg");
+    if (el) el.click();
+    else this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
+  },
+
+  pickRewardCursorFile() {
+    const el = document.getElementById("creator-file-cursor");
+    if (el) el.click();
+    else this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
+  },
+
+  async _handleMusicFile(file) {
+    this.setUploadStatus("Saving music…");
+    try {
+      await CreatorStore.attachMusic(file);
+      const draft = CreatorStore.draft();
+      const cloud = draft.musicPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Music ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Music upload failed");
+    }
+  },
+
+  async _handleRewardBgFile(file) {
+    this.setUploadStatus("Saving background…");
+    try {
+      await CreatorStore.attachRewardBg(file);
+      const draft = CreatorStore.rewardDraft();
+      const cloud = draft.bgPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Background ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Background upload failed");
+    }
+  },
+
+  async _handleRewardCursorFile(file) {
+    this.setUploadStatus("Saving cursor…");
+    try {
+      await CreatorStore.attachRewardCursor(file);
+      const draft = CreatorStore.rewardDraft();
+      const cloud = draft.cursorPublicUrl ? " · cloud" : "";
+      this.setUploadStatus(`Cursor ready: ${file.name}${cloud}`);
+    } catch (err) {
+      this.setUploadStatus(err.message || "Cursor upload failed");
+    }
+  },
+
+  setUploadStatus(message) {
+    this._uploadStatus = message || "";
+  },
+
+  getUploadStatus() {
+    return this._uploadStatus;
+  },
+
   openNameEditor(value, onSave) {
-    const modal = document.getElementById("creator-name-modal");
-    const input = document.getElementById("creator-name-input");
-    if (!modal || !input) return;
+    const overlay = document.getElementById("creator-name-overlay");
+    const input = document.getElementById("creator-stage-name");
+    const error = document.getElementById("creator-name-error");
+    if (!overlay || !input) return;
     this._nameSaveCb = onSave;
+    if (error) error.textContent = "";
     input.value = value || "";
-    modal.classList.remove("hidden");
+    overlay.classList.remove("hidden");
+    document.body.classList.add("creator-form-open");
     setTimeout(() => {
       input.focus();
       input.select();
-    }, 0);
+    }, 50);
   },
 
   closeNameEditor() {
-    document.getElementById("creator-name-modal")?.classList.add("hidden");
+    document.getElementById("creator-name-overlay")?.classList.add("hidden");
+    document.body.classList.remove("creator-form-open");
+    const error = document.getElementById("creator-name-error");
+    if (error) error.textContent = "";
     this._nameSaveCb = null;
   },
 
   _saveNameEditor() {
-    const input = document.getElementById("creator-name-input");
+    const input = document.getElementById("creator-stage-name");
     const name = input?.value?.trim().slice(0, 24) || "";
+    if (!name) {
+      const error = document.getElementById("creator-name-error");
+      if (error) error.textContent = "Enter a stage name";
+      return;
+    }
     if (this._nameSaveCb) this._nameSaveCb(name);
     CreatorStore.draft().name = name;
     this.closeNameEditor();
@@ -3620,9 +3941,18 @@ const CreatorDom = {
 const CreatorUi = {
   levelsTab: "main",
   page: "stage",
+  communitySearch: "",
   shareLevelId: null,
   rewardSliders: null,
   draggingRewardSlider: false,
+
+  communitySearchY() {
+    return 108 + uiBtnHeight(40) + uiBtnGap(14);
+  },
+
+  communityListTop() {
+    return this.communitySearchY() + uiBtnHeight(44) + uiBtnGap(12);
+  },
 
   drawMenuSlot(slot, mousePos) {
     Screens.drawMenuSlot("creator", "CREATOR", slot, mousePos);
@@ -3645,18 +3975,19 @@ const CreatorUi = {
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = Screens.screenPad();
+    const gap = uiBtnGap();
 
     App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
     App.ctx.fillText("SELECT STAGE", pad, 76);
 
-    const tabW = (viewW() - pad * 2 - 12) / 2;
+    const tabW = (viewW() - pad * 2 - gap) / 2;
     const tabY = 108;
     drawNeonButton(App.ctx, Screens.btn("lvMain", "MAIN", pad, tabY, tabW, uiBtnHeight(40)), "MAIN LEVELS", this.levelsTab === "main", true);
-    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + 12, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
+    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + gap, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
 
     if (this.levelsTab === "main") this._drawMainLevels(save, mousePos, pad);
-    else this._drawCommunityLevels(save, mousePos, pad, tabY);
+    else this._drawCommunityLevels(save, mousePos, pad);
 
     Screens.drawActionButton("back", "BACK", Screens.bottomActionY(), mousePos, { small: true });
     Screens.finishButtons();
@@ -3687,10 +4018,10 @@ const CreatorUi = {
     App.ctx.restore();
   },
 
-  _drawCommunityLevels(save, mousePos, pad, tabY) {
-    const levels = CreatorStore.list();
+  _drawCommunityLevels(save, mousePos, pad) {
+    const levels = CreatorStore.filterLevels(this.communitySearch);
     const rowH = Screens.listRowHeight();
-    const top = tabY + 55;
+    const top = this.communityListTop();
     const play = Screens.playBtnSize();
     Screens.listMaxScroll = Math.max(0, top + (levels.length + 1) * rowH - (viewH() - 90));
     Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
@@ -3726,9 +4057,7 @@ const CreatorUi = {
     const draft = CreatorStore.draft();
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
-    const rowH = 64;
-    const contentH = 720;
-    Screens.listMaxScroll = Math.max(0, contentH - (viewH() - 100));
+    const gap = uiBtnGap();
     const scroll = Screens.scrollY;
     let y = 100 - scroll;
 
@@ -3737,7 +4066,8 @@ const CreatorUi = {
     App.ctx.fillText("CREATE STAGE", pad, 72);
 
     y = this._rowLabel("STAGE NAME", pad, y, cardW);
-    const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: uiBtnHeight(40) };
+    const nameH = uiBtnHeight(40);
+    const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: nameH };
     Screens.btn("cgNameField", "NAME", nameRect.x, nameRect.y, nameRect.w, nameRect.h);
     App.ctx.fillStyle = "rgba(18,18,28,0.85)";
     roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
@@ -3748,53 +4078,79 @@ const CreatorUi = {
     App.ctx.stroke();
     App.ctx.font = uiFont(20);
     App.ctx.fillStyle = rgb(draft.name ? COLORS.text : COLORS.gray);
-    const nameText = draft.name || "Tap to enter name…";
-    App.ctx.fillText(nameText, nameRect.x + 14, nameRect.y + 26);
-    y += uiBtnHeight(40) + 14;
+    App.ctx.fillText(draft.name || "Tap to enter name…", nameRect.x + 14, nameRect.y + nameH * 0.62);
+    y += nameH + gap;
 
     y = this._rowLabel("BPM", pad, y, cardW);
+    const bpmH = uiBtnHeight(40);
     const bpmY = y;
-    drawNeonButton(App.ctx, Screens.btn("cgBpmDown", "◀", pad, bpmY, 52, uiBtnHeight(40)), "◀", pointInRect(mousePos, Screens.buttons.cgBpmDown), true);
+    drawNeonButton(App.ctx, Screens.btn("cgBpmDown", "◀", pad, bpmY, 52, bpmH), "◀", pointInRect(mousePos, Screens.buttons.cgBpmDown), true);
     App.ctx.font = gameFont(28);
     App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(String(draft.bpm), pad + 70, bpmY + 28);
-    drawNeonButton(App.ctx, Screens.btn("cgBpmUp", "▶", pad + 130, bpmY, 52, uiBtnHeight(40)), "▶", pointInRect(mousePos, Screens.buttons.cgBpmUp), true);
-    y += uiBtnHeight(40) + 14;
+    App.ctx.fillText(String(draft.bpm), pad + 70, bpmY + bpmH * 0.68);
+    drawNeonButton(App.ctx, Screens.btn("cgBpmUp", "▶", pad + 130, bpmY, 52, bpmH), "▶", pointInRect(mousePos, Screens.buttons.cgBpmUp), true);
+    y += bpmH + gap;
 
     y = this._rowLabel("MECHANICS", pad, y, cardW);
+    const mechH = uiBtnHeight(36);
     for (const item of CREATOR_MECH_KEYS) {
       if (item.needs && !draft.mechanics[item.needs]) continue;
       const on = !!draft.mechanics[item.key];
-      const box = Screens.btn(`cgMech-${item.key}`, on ? "ON" : "OFF", pad + 12, y, cardW - 24, uiBtnHeight(36));
+      const box = Screens.btn(`cgMech-${item.key}`, on ? "ON" : "OFF", pad + 12, y, cardW - 24, mechH);
       drawNeonButton(App.ctx, box, `${on ? "☑" : "☐"} ${item.label}`, pointInRect(mousePos, box), true);
-      y += uiBtnHeight(36) + 8;
+      y += mechH + uiBtnGap(8);
     }
-    y += 6;
+    y += uiBtnGap(6);
 
     y = this._rowLabel("MUSIC", pad, y, cardW);
     const track = getLevelById(draft.musicTrackId || 1);
-    const musicLabel = draft.musicSource === "upload" ? "CUSTOM UPLOAD" : `${track.id}. ${track.name}`;
-    drawNeonButton(App.ctx, Screens.btn("cgTrackDown", "◀", pad, y, 52, uiBtnHeight(36)), "◀", pointInRect(mousePos, Screens.buttons.cgTrackDown), true);
+    const trackH = uiBtnHeight(36);
+    const musicLabel = draft.musicSource === "upload"
+      ? (draft.musicFileName || "CUSTOM UPLOAD")
+      : `${track.id}. ${track.name}`;
+    drawNeonButton(App.ctx, Screens.btn("cgTrackDown", "◀", pad, y, 52, trackH), "◀", pointInRect(mousePos, Screens.buttons.cgTrackDown), true);
     App.ctx.font = uiFont(18);
     App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(musicLabel, pad + 70, y + 24);
-    drawNeonButton(App.ctx, Screens.btn("cgTrackUp", "▶", pad + cardW - 64, y, 52, uiBtnHeight(36)), "▶", pointInRect(mousePos, Screens.buttons.cgTrackUp), true);
-    y += uiBtnHeight(36) + 8;
-    drawNeonButton(App.ctx, Screens.btn("cgMusic", "UPLOAD MP3", pad + 12, y, cardW - 24, uiBtnHeight(36)), "UPLOAD MP3", pointInRect(mousePos, Screens.buttons.cgMusic), true);
-    y += uiBtnHeight(36) + 14;
+    App.ctx.fillText(musicLabel, pad + 70, y + trackH * 0.66);
+    drawNeonButton(App.ctx, Screens.btn("cgTrackUp", "▶", pad + cardW - 64, y, 52, trackH), "▶", pointInRect(mousePos, Screens.buttons.cgTrackUp), true);
+    y += trackH + uiBtnGap(8);
+    drawNeonButton(App.ctx, Screens.btn("cgMusic", "UPLOAD MP3", pad + 12, y, cardW - 24, trackH), "UPLOAD MP3", pointInRect(mousePos, Screens.buttons.cgMusic), true);
+    y += trackH + uiBtnGap(6);
+    const status = CreatorDom.getUploadStatus();
+    if (status && y > 90 && y < viewH()) {
+      App.ctx.font = uiFont(14);
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText(status, pad + 12, y + 14);
+      y += uiBtnGap(20);
+    } else {
+      y += uiBtnGap(8);
+    }
 
     y = this._rowLabel("REWARD", pad, y, cardW);
     const reward = CreatorStore.getReward(draft.rewardId);
     const rewardLine = reward ? reward.name : "None selected";
-    drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 140, uiBtnHeight(40)), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
-    drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + cardW - 120, y, 108, uiBtnHeight(40)), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
-    y += uiBtnHeight(40) + 14;
+    const rewardH = uiBtnHeight(40);
+    if (Input.touchMode) {
+      drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 24, rewardH), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
+      y += rewardH + uiBtnGap(8);
+      drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + 12, y, cardW - 24, rewardH), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
+      y += rewardH + gap;
+    } else {
+      drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 140, rewardH), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
+      drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + cardW - 120, y, 108, rewardH), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
+      y += rewardH + gap;
+    }
 
-    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST", pad, y, (cardW - 12) / 2, uiBtnHeight(44)), "TEST", pointInRect(mousePos, Screens.buttons.cgTest), true);
-    drawNeonButton(App.ctx, Screens.btn("cgPublish", "PUBLISH", pad + (cardW + 12) / 2, y, (cardW - 12) / 2, uiBtnHeight(44)), "PUBLISH", pointInRect(mousePos, Screens.buttons.cgPublish), true);
-    y += uiBtnHeight(44) + 10;
-    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+    const actionH = uiBtnHeight(44);
+    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST", pad, y, (cardW - gap) / 2, actionH), "TEST", pointInRect(mousePos, Screens.buttons.cgTest), true);
+    drawNeonButton(App.ctx, Screens.btn("cgPublish", "PUBLISH", pad + (cardW + gap) / 2, y, (cardW - gap) / 2, actionH), "PUBLISH", pointInRect(mousePos, Screens.buttons.cgPublish), true);
+    y += actionH + uiBtnGap(10);
+    const backH = uiBtnHeight(40);
+    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, backH), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+    y += backH + uiBtnGap(24);
 
+    Screens.listMaxScroll = Math.max(0, y + scroll - (viewH() - 100));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
     Screens.finishButtons();
   },
 
@@ -3803,27 +4159,37 @@ const CreatorUi = {
     App.ctx.font = uiFont(16);
     App.ctx.fillStyle = rgb(COLORS.gold);
     App.ctx.fillText(text, pad + 12, y + 16);
-    return y + 24;
+    return y + uiBtnGap(24);
   },
 
   async launchCommunity(meta) {
-    const musicUrl = meta.musicSource === "upload" && meta.hasMusic ? await CreatorStore.getMusicUrl(meta.id) : null;
+    let musicUrl = null;
+    if (meta.musicSource === "upload" && meta.hasMusic) {
+      musicUrl = meta.musicPublicUrl || await CreatorStore.getMusicUrl(meta.id);
+    }
     App.launchGame(applyCreatorDraftToLevel(meta, musicUrl));
   },
 
   async testDraft() {
-    const draft = { ...CreatorStore.draft(), id: "test", author: "Test" };
+    const draft = { ...CreatorStore.draft(), author: "Test" };
+    if (!draft.id) draft.id = `test_${Date.now()}`;
     let musicUrl = null;
     if (draft.musicSource === "upload") {
       if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
-      else if (draft.hasMusic && draft.id) musicUrl = await CreatorStore.getMusicUrl(draft.id);
+      else if (draft.musicPublicUrl) musicUrl = draft.musicPublicUrl;
+      else if (draft.hasMusic) musicUrl = await CreatorStore.getMusicUrl(draft.id);
     }
     App.launchGame(applyCreatorDraftToLevel(draft, musicUrl));
   },
 
   handleLevelsClick(save, pos) {
     if (this._hit("lvMain", pos)) { this.levelsTab = "main"; Screens.resetScroll(); return true; }
-    if (this._hit("lvCommunity", pos)) { this.levelsTab = "community"; Screens.resetScroll(); return true; }
+    if (this._hit("lvCommunity", pos)) {
+      this.levelsTab = "community";
+      Screens.resetScroll();
+      CreatorStore.refreshCommunitySearch(this.communitySearch).catch(() => {});
+      return true;
+    }
     if (this.levelsTab === "main") {
       for (const level of LEVELS) {
         if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
@@ -3835,12 +4201,13 @@ const CreatorUi = {
     }
     if (this._hit("openCreator", pos)) {
       CreatorStore.resetDraft();
+      CreatorDom.setUploadStatus("");
       this.page = "stage";
       Screens.resetScroll();
       App.state = "creator";
       return true;
     }
-    for (const meta of CreatorStore.list()) {
+    for (const meta of CreatorStore.filterLevels(this.communitySearch)) {
       if (this._hit(`clevel-${meta.id}`, pos)) { this.launchCommunity(meta); return true; }
     }
     return false;
@@ -3859,13 +4226,7 @@ const CreatorUi = {
       return true;
     }
     if (this._hit("cgMusic", pos)) {
-      CreatorDom.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", async (file) => {
-        try {
-          await CreatorStore.attachMusic(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickMusicFile();
       return true;
     }
     return false;
@@ -3883,14 +4244,20 @@ const CreatorUi = {
     if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
     if (this._hit("cgPublish", pos)) {
-      const name = draft.name?.trim() || "MY STAGE";
-      draft.name = name;
-      CreatorStore.saveDraft().then((id) => {
-        CreatorDom.showShareModal(name || "My Stage", id);
-        App.state = "levels";
-        this.levelsTab = "community";
-        this.page = "stage";
-      });
+      if (!draft.name?.trim()) {
+        CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
+        return true;
+      }
+      const stageName = draft.name.trim();
+      CreatorDom.setUploadStatus("Publishing…");
+      CreatorStore.publishLevel()
+        .then((id) => {
+          CreatorDom.showShareModal(stageName, id);
+          App.state = "levels";
+          this.levelsTab = "community";
+          this.page = "stage";
+        })
+        .catch((err) => CreatorDom.setUploadStatus(err.message || "Publish failed"));
       return true;
     }
     for (const item of CREATOR_MECH_KEYS) {
@@ -3913,7 +4280,8 @@ const CreatorRewardUi = {
     const draft = CreatorStore.rewardDraft();
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
-    Screens.listMaxScroll = Math.max(0, 780 - (viewH() - 100));
+    const gap = uiBtnGap();
+    Screens.listMaxScroll = Math.max(0, 820 - (viewH() - 100));
     let y = 100 - Screens.scrollY;
 
     App.ctx.font = gameFont(40);
@@ -3927,25 +4295,25 @@ const CreatorRewardUi = {
       y += 24;
       const nameBtn = Screens.btn("cgrName", draft.name, pad + 12, y, cardW - 24, uiBtnHeight(40));
       drawNeonButton(App.ctx, nameBtn, draft.name, pointInRect(mousePos, nameBtn), true);
-      y += uiBtnHeight(40) + 14;
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
       App.ctx.fillStyle = rgb(COLORS.gold);
       App.ctx.fillText("BACKGROUND — upload image or video", pad + 12, y + 16);
-      y += 24;
+      y += uiBtnGap(24);
       const bgBtn = Screens.btn("cgrBgUpload", draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pad + 12, y, cardW - 24, uiBtnHeight(40));
-      drawNeonButton(App.ctx, bgBtn, draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pointInRect(mousePos, bgBtn), true);
-      y += uiBtnHeight(40) + 10;
+      drawNeonButton(App.ctx, bgBtn, draft.hasMedia ? (draft.mediaFileName || "MEDIA READY") : "UPLOAD BG", pointInRect(mousePos, bgBtn), true);
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
       App.ctx.fillStyle = rgb(COLORS.gold);
       App.ctx.fillText("CURSOR — upload PNG", pad + 12, y + 16);
-      y += 24;
+      y += uiBtnGap(24);
       const curBtn = Screens.btn("cgrCursorUpload", draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pad + 12, y, cardW - 24, uiBtnHeight(40));
       drawNeonButton(App.ctx, curBtn, draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pointInRect(mousePos, curBtn), true);
-      y += uiBtnHeight(40) + 10;
+      y += uiBtnHeight(40) + gap;
     }
 
     if (y > 80 && y < viewH()) {
@@ -3965,10 +4333,13 @@ const CreatorRewardUi = {
 
     if (y > 80 && y < viewH()) {
       drawNeonButton(App.ctx, Screens.btn("cgrSave", "SAVE REWARD", pad, y, cardW, uiBtnHeight(44)), "SAVE REWARD", pointInRect(mousePos, Screens.buttons.cgrSave), true);
-      y += uiBtnHeight(44) + 10;
+      y += uiBtnHeight(44) + gap;
       drawNeonButton(App.ctx, Screens.btn("cgrBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgrBack), true);
+      y += uiBtnHeight(40) + uiBtnGap(24);
     }
 
+    Screens.listMaxScroll = Math.max(0, y + Screens.scrollY - (viewH() - 100));
+    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
     Screens.finishButtons();
   },
 
@@ -3997,8 +4368,12 @@ const CreatorRewardUi = {
     });
     App.ctx.restore();
 
-    drawNeonButton(App.ctx, Screens.btn("cgpNew", "+ NEW REWARD", pad, viewH() - 130, viewW() - pad * 2, uiBtnHeight(40)), "+ NEW REWARD", pointInRect(mousePos, Screens.buttons.cgpNew), true);
-    drawNeonButton(App.ctx, Screens.btn("cgpBack", "BACK", pad, viewH() - 82, viewW() - pad * 2, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgpBack), true);
+    const backH = uiBtnHeight(40);
+    const gap = uiBtnGap(16);
+    const backY = viewH() - uiBtnGap(24) - backH;
+    const newY = backY - gap - backH;
+    drawNeonButton(App.ctx, Screens.btn("cgpNew", "+ NEW REWARD", pad, newY, viewW() - pad * 2, backH), "+ NEW REWARD", pointInRect(mousePos, Screens.buttons.cgpNew), true);
+    drawNeonButton(App.ctx, Screens.btn("cgpBack", "BACK", pad, backY, viewW() - pad * 2, backH), "BACK", pointInRect(mousePos, Screens.buttons.cgpBack), true);
     Screens.finishButtons();
   },
 
@@ -4007,25 +4382,12 @@ const CreatorRewardUi = {
   },
 
   handlePointerDown(pos) {
-    const draft = CreatorStore.rewardDraft();
     if (Screens._hit("cgrBgUpload", pos)) {
-      CreatorDom.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", async (file) => {
-        try {
-          await CreatorStore.attachRewardBg(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickRewardBgFile();
       return true;
     }
     if (Screens._hit("cgrCursorUpload", pos)) {
-      CreatorDom.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", async (file) => {
-        try {
-          await CreatorStore.attachRewardCursor(file);
-        } catch (err) {
-          console.error(err);
-        }
-      });
+      CreatorDom.pickRewardCursorFile();
       return true;
     }
     return false;
@@ -4111,7 +4473,7 @@ const Screens = {
   },
 
   buttonStackGap() {
-    return Input.touchMode ? 14 : 12;
+    return Input.touchMode ? 18 : 12;
   },
 
   actionButtonWidth() {
@@ -5090,6 +5452,7 @@ const App = {
       }
 
       if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
+      if (document.body.classList.contains("creator-form-open")) return;
 
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);
@@ -5212,12 +5575,12 @@ const App = {
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
-    if (level.playBg?.mediaId) {
-      CreatorStore.getMediaUrl(level.playBg.mediaId).then((url) => {
-        if (!url) return;
+    if (level.playBg?.mediaId || level.playBg?.mediaUrl) {
+      const url = level.playBg.mediaUrl || await CreatorStore.getMediaUrl(level.playBg.mediaId);
+      if (url) {
         level._bgMediaUrl = url;
         preloadBgMedia(url);
-      });
+      }
     }
     this.state = "game";
     if (Input.touchMode) await MobileShell.enterPlayMode();
@@ -5326,6 +5689,8 @@ const App = {
       Auth.showLoginScreen();
       Auth.setError(this.renderError);
     }
+
+    CreatorDom.syncOverlays?.();
 
     requestAnimationFrame((t) => this.loop(t));
   },

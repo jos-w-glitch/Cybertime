@@ -25,7 +25,7 @@ const Screens = {
   },
 
   buttonStackGap() {
-    return Input.touchMode ? 14 : 12;
+    return Input.touchMode ? 18 : 12;
   },
 
   actionButtonWidth() {

@@ -170,6 +170,7 @@ const App = {
       }
 
       if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
+      if (document.body.classList.contains("creator-form-open")) return;
 
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);
@@ -292,12 +293,12 @@ const App = {
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
-    if (level.playBg?.mediaId) {
-      CreatorStore.getMediaUrl(level.playBg.mediaId).then((url) => {
-        if (!url) return;
+    if (level.playBg?.mediaId || level.playBg?.mediaUrl) {
+      const url = level.playBg.mediaUrl || await CreatorStore.getMediaUrl(level.playBg.mediaId);
+      if (url) {
         level._bgMediaUrl = url;
         preloadBgMedia(url);
-      });
+      }
     }
     this.state = "game";
     if (Input.touchMode) await MobileShell.enterPlayMode();
@@ -406,6 +407,8 @@ const App = {
       Auth.showLoginScreen();
       Auth.setError(this.renderError);
     }
+
+    CreatorDom.syncOverlays?.();
 
     requestAnimationFrame((t) => this.loop(t));
   },

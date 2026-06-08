@@ -41,6 +41,53 @@ const CreatorStore = {
 
   async init() {
     await this._loadAll();
+    await this.refreshCommunitySearch("");
+  },
+
+  async refreshCommunitySearch(search) {
+    if (!CloudStore.enabled()) return;
+    const remote = await CloudStore.fetchCommunityLevels(search);
+    if (remote) this._mergeRemoteLevels(remote);
+  },
+
+  filterLevels(search) {
+    const q = (search || "").trim().toLowerCase();
+    const all = this.list();
+    if (!q) return all;
+    return all.filter((level) =>
+      level.name?.toLowerCase().includes(q) || (level.author || "").toLowerCase().includes(q)
+    );
+  },
+
+  _mergeRemoteLevels(rows) {
+    if (!Array.isArray(rows)) return;
+    const byId = new Map(this._levels.map((level) => [level.id, level]));
+    for (const row of rows) {
+      const meta = this._remoteToMeta(row);
+      if (meta?.id) byId.set(meta.id, meta);
+    }
+    this._levels = Array.from(byId.values());
+  },
+
+  _remoteToMeta(row) {
+    const base = row.level_json && typeof row.level_json === "object" ? row.level_json : {};
+    return {
+      ...defaultCreatorDraft(),
+      ...base,
+      id: row.id,
+      name: row.name || base.name || "MY STAGE",
+      author: row.author || row.author_name || base.author || "Creator",
+      createdAt: row.createdAt || Date.now(),
+      musicPublicUrl: row.music_url || base.musicPublicUrl || null,
+      rewardMediaUrl: row.reward_media_url || base.rewardMediaUrl || null,
+      rewardCursorUrl: row.reward_cursor_url || base.rewardCursorUrl || null,
+      musicSource: base.musicSource || (row.music_url ? "upload" : "track"),
+      hasMusic: !!(row.music_url || base.hasMusic),
+    };
+  },
+
+  getById(id) {
+    return this._levels.find((level) => level.id === id) || null;
   },
 
   list() {
@@ -55,6 +102,69 @@ const CreatorStore = {
     return this._rewards.find((r) => r.id === id) || null;
   },
 
+  async publishLevel() {
+    const draft = this.draft();
+    if (!draft.name?.trim()) throw new Error("Enter a stage name");
+    const id = await this.saveDraft();
+    const meta = this.getById(id);
+    if (!meta) return id;
+
+    const rewardUrls = await this._resolveRewardCloudUrls(meta);
+    meta.rewardMediaUrl = rewardUrls.rewardMediaUrl;
+    meta.rewardCursorUrl = rewardUrls.rewardCursorUrl;
+    if (meta.musicSource === "upload" && !meta.musicPublicUrl) {
+      const blob = await this._getMusic(id);
+      if (blob) meta.musicPublicUrl = await this._uploadToCloud(id, "music", blob);
+    }
+    await this._putLevel(meta);
+
+    if (CloudStore.enabled() && Auth.isLoggedIn()) {
+      const result = await CloudStore.publishCommunityLevel(Auth.displayName, this._cloudPayload(meta));
+      if (!result?.ok) throw new Error(result?.reason || "Cloud publish failed");
+      await this.refreshCommunitySearch(CreatorUi.communitySearch || "");
+      CreatorDom.setUploadStatus("Published to Community!");
+    } else if (CloudStore.enabled()) {
+      CreatorDom.setUploadStatus("Saved locally — login to share online");
+    }
+    return id;
+  },
+
+  _cloudPayload(meta) {
+    return {
+      ...meta,
+      musicPublicUrl: meta.musicPublicUrl || "",
+      rewardMediaUrl: meta.rewardMediaUrl || "",
+      rewardCursorUrl: meta.rewardCursorUrl || "",
+    };
+  },
+
+  async _resolveRewardCloudUrls(meta) {
+    const reward = this.getReward(meta.rewardId);
+    if (!reward) return { rewardMediaUrl: null, rewardCursorUrl: null };
+    let rewardMediaUrl = reward.bgPublicUrl || meta.rewardMediaUrl || null;
+    let rewardCursorUrl = reward.cursorPublicUrl || meta.rewardCursorUrl || null;
+    if (reward.mediaId && !rewardMediaUrl) {
+      const blob = await this._getMedia(reward.mediaId);
+      if (blob) rewardMediaUrl = await this._uploadToCloud(meta.id, "reward-bg", blob);
+    }
+    if (reward.cursorId && !rewardCursorUrl) {
+      const blob = await this._getMedia(reward.cursorId);
+      if (blob) rewardCursorUrl = await this._uploadToCloud(meta.id, "reward-cursor", blob);
+    }
+    return { rewardMediaUrl, rewardCursorUrl };
+  },
+
+  async _uploadToCloud(prefix, kind, file) {
+    if (!CloudStore.enabled()) return null;
+    try {
+      const result = await CloudStore.uploadCommunityFile(prefix, kind, file);
+      return result?.url || null;
+    } catch (err) {
+      console.warn("Cloud upload failed", err);
+      return null;
+    }
+  },
+
   async saveDraft() {
     const draft = { ...this._draft };
     const pendingMusic = draft._pendingMusic;
@@ -67,6 +177,9 @@ const CreatorStore = {
       await this._putMusic(draft.id, pendingMusic);
       draft.hasMusic = true;
       draft.musicSource = "upload";
+      if (!draft.musicPublicUrl) {
+        draft.musicPublicUrl = await this._uploadToCloud(draft.id, "music", pendingMusic);
+      }
     }
     const reward = this.getReward(draft.rewardId);
     if (reward) {
@@ -75,6 +188,7 @@ const CreatorStore = {
       draft.rewardGrid = [...reward.grid];
       draft.rewardAccent = [...reward.accent];
       draft.rewardMediaId = reward.mediaId || null;
+      draft.rewardMediaUrl = reward.bgPublicUrl || null;
     }
     await this._putLevel(draft);
     await this._loadAll();
@@ -96,11 +210,13 @@ const CreatorStore = {
       draft.mediaType = pendingBg.type.startsWith("video") ? "video" : "image";
       await this._putMedia(draft.mediaId, pendingBg);
       draft.hasMedia = true;
+      draft.bgPublicUrl = await this._uploadToCloud(draft.id, "reward-bg", pendingBg);
     }
     if (pendingCursor) {
       draft.cursorId = `${draft.id}-cursor`;
       await this._putMedia(draft.cursorId, pendingCursor);
       draft.hasCursor = true;
+      draft.cursorPublicUrl = await this._uploadToCloud(draft.id, "reward-cursor", pendingCursor);
     }
     await this._putReward(draft);
     await this._loadAll();
@@ -111,27 +227,49 @@ const CreatorStore = {
   async attachMusic(file) {
     if (!file || file.size > CREATOR_MUSIC_MAX) throw new Error("Music too large (max 8MB)");
     const draft = this.draft();
+    if (!draft.id) draft.id = `c_${Date.now()}`;
     draft._pendingMusic = file;
+    draft.musicFileName = file.name;
     draft.hasMusic = true;
     draft.musicSource = "upload";
+    await this._putMusic(draft.id, file);
+    draft._pendingMusic = null;
+    draft.musicPublicUrl = await this._uploadToCloud(draft.id, "music", file);
+    return draft;
   },
 
   async attachRewardBg(file) {
     if (!file || file.size > CREATOR_MEDIA_MAX) throw new Error("File too large (max 12MB)");
     const draft = this.rewardDraft();
+    if (!draft.id) draft.id = `r_${Date.now()}`;
     draft._pendingBg = file;
+    draft.mediaFileName = file.name;
     draft.hasMedia = true;
+    draft.mediaId = `${draft.id}-bg`;
+    draft.mediaType = file.type.startsWith("video") ? "video" : "image";
+    await this._putMedia(draft.mediaId, file);
+    draft._pendingBg = null;
+    draft.bgPublicUrl = await this._uploadToCloud(draft.id, "reward-bg", file);
+    return draft;
   },
 
   async attachRewardCursor(file) {
     if (!file || !file.type.startsWith("image/")) throw new Error("Cursor must be PNG/JPG");
     if (file.size > 2 * 1024 * 1024) throw new Error("Cursor image max 2MB");
     const draft = this.rewardDraft();
+    if (!draft.id) draft.id = `r_${Date.now()}`;
     draft._pendingCursor = file;
     draft.hasCursor = true;
+    draft.cursorId = `${draft.id}-cursor`;
+    await this._putMedia(draft.cursorId, file);
+    draft._pendingCursor = null;
+    draft.cursorPublicUrl = await this._uploadToCloud(draft.id, "reward-cursor", file);
+    return draft;
   },
 
   async getMusicUrl(levelId) {
+    const meta = this.getById(levelId);
+    if (meta?.musicPublicUrl) return meta.musicPublicUrl;
     if (this._musicUrls.has(levelId)) return this._musicUrls.get(levelId);
     const blob = await this._getMusic(levelId);
     if (!blob) return null;
@@ -240,11 +378,14 @@ function defaultCreatorDraft() {
     musicSource: "track",
     musicTrackId: 3,
     hasMusic: false,
+    musicFileName: "",
+    musicPublicUrl: null,
     rewardId: null,
     rewardName: "STAGE REWARD",
     rewardBg: [18, 8, 32],
     rewardGrid: [60, 30, 90],
     rewardAccent: [255, 80, 180],
+    rewardMediaUrl: null,
     createdAt: 0,
     author: "",
   };
@@ -262,6 +403,9 @@ function defaultRewardDraft() {
     mediaId: null,
     cursorId: null,
     mediaType: null,
+    mediaFileName: "",
+    bgPublicUrl: null,
+    cursorPublicUrl: null,
     createdAt: 0,
   };
 }
@@ -274,7 +418,7 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     id: meta.id,
     communityId: meta.id,
     community: true,
-    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || null) : null,
+    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || meta.musicPublicUrl || null) : null,
     musicSourceId: meta.musicSource === "track" ? `track${meta.musicTrackId || 1}` : null,
     name: meta.name?.trim() || "MY STAGE",
     bpm: meta.bpm,
@@ -301,7 +445,13 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     rewardGrid: meta.rewardGrid,
     rewardAccent: meta.rewardAccent,
     rewardMediaId: meta.rewardMediaId || null,
-    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent, mediaId: meta.rewardMediaId || null },
+    playBg: {
+      bg: meta.rewardBg,
+      grid: meta.rewardGrid,
+      accent: meta.rewardAccent,
+      mediaId: meta.rewardMediaId || null,
+      mediaUrl: meta.rewardMediaUrl || null,
+    },
   };
   return level;
 }
@@ -342,4 +492,6 @@ function cycleCreatorTrack(draft, delta) {
   draft.musicSource = "track";
   draft.hasMusic = false;
   draft._pendingMusic = null;
+  draft.musicFileName = "";
+  draft.musicPublicUrl = null;
 }
