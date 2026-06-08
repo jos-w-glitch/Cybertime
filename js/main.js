@@ -142,12 +142,6 @@ const App = {
   bindEvents() {
     canvas.addEventListener("pointerdown", (e) => {
       if (!this.sessionReady) return;
-      if (SitePromo.visible) {
-        e.preventDefault();
-        Input.syncPos(e.clientX, e.clientY);
-        Screens.handlePromoClick(Input.mousePos);
-        return;
-      }
       const inGame = this.state === "game" && this.game?.running;
       const waitingStart = inGame && !this.game.started;
       if (!inGame && e.button !== 0) return;
@@ -305,7 +299,6 @@ const App = {
     GameLogic.finish(this.game, this.save);
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
-    SitePromo.onGameOver();
     this.state = "gameover";
   },
 
@@ -332,8 +325,6 @@ const App = {
 
     try {
       clearFrame(this.ctx);
-      if (this.state === "menu") SitePromo.onEnterMenu(now);
-      else SitePromo.onLeaveMenu();
 
       if (this.state === "gameover" && this.game) {
         Screens.drawGameOver(this.game, this.save, mousePos, now, homeHovered);
@@ -376,10 +367,6 @@ const App = {
         this.renderCursor(this.save);
       }
 
-      if (SitePromo.visible) {
-        Screens.drawPromo(mousePos);
-        this.renderCursor(this.save);
-      }
     } catch (err) {
       console.error(err);
       this.renderError = err?.message || "Render failed";
