@@ -29,7 +29,7 @@ const App = {
     UiIcons.load();
     this.bindEvents();
     this.bindNameForm();
-    this.bindCreatorMusic();
+    CreatorDom.init();
 
     Auth.init(() => this.startSession());
 
@@ -80,19 +80,6 @@ const App = {
     Auth.updatePinHint("");
   },
 
-  bindCreatorMusic() {
-    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachMusic(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
-    });
-  },
-
   tryLogin() {
     const name = document.getElementById("player-name")?.value || "";
     const pin = document.getElementById("player-pin")?.value || "";
@@ -126,6 +113,11 @@ const App = {
       this.stars = createStars();
       AudioEngine.setVolumes(this.save.settings);
       CreatorStore.init().catch(() => {});
+      const communityParam = new URLSearchParams(window.location.search).get("community");
+      if (communityParam) {
+        CreatorUi.levelsTab = "community";
+        this.state = "levels";
+      }
       Auth.hideNameScreen();
       this.sessionReady = true;
       if (this.state !== "game" || !this.game?.running) {
@@ -203,8 +195,8 @@ const App = {
       if (this.state === "shop" && Screens.draggingBgSlider) {
         Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
       }
-      if (this.state === "creator" && CreatorUi.draggingRewardSlider) {
-        CreatorUi._handleRewardSliderDrag(CreatorStore.draft(), Input.mousePos);
+      if (this.state === "creator" && CreatorRewardUi.draggingRewardSlider) {
+        CreatorRewardUi._handleSliderDrag(CreatorStore.rewardDraft(), Input.mousePos);
       }
     });
 
@@ -217,7 +209,7 @@ const App = {
       }
       Screens.draggingSlider = false;
       Screens.draggingBgSlider = false;
-      CreatorUi.draggingRewardSlider = false;
+      CreatorRewardUi.draggingRewardSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {
@@ -298,6 +290,13 @@ const App = {
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
+    if (level.playBg?.mediaId) {
+      CreatorStore.getMediaUrl(level.playBg.mediaId).then((url) => {
+        if (!url) return;
+        level._bgMediaUrl = url;
+        preloadBgMedia(url);
+      });
+    }
     this.state = "game";
     if (Input.touchMode) await MobileShell.enterPlayMode();
     await AudioEngine.resume();
@@ -370,7 +369,7 @@ const App = {
         Screens.drawLevels(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "creator") {
-        CreatorUi.drawCreator(this.save, mousePos, now);
+        CreatorUi.draw(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "infinite") {
         Screens.drawInfiniteSelect(this.save, mousePos, now);

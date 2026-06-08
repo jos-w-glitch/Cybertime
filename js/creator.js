@@ -1,10 +1,23 @@
 const CREATOR_DB = "cybertime-creator";
+const CREATOR_DB_VERSION = 2;
 const CREATOR_MUSIC_MAX = 8 * 1024 * 1024;
+const CREATOR_MEDIA_MAX = 12 * 1024 * 1024;
+
+const CREATOR_MECH_KEYS = [
+  { key: "red", label: "RED BOMBS" },
+  { key: "orange", label: "ORANGE BOMBS" },
+  { key: "purple", label: "PURPLE PAIRS" },
+  { key: "sliders", label: "SLIDERS" },
+  { key: "sliderRed", label: "RED SLIDERS", needs: "sliders" },
+];
 
 const CreatorStore = {
   _levels: [],
+  _rewards: [],
   _musicUrls: new Map(),
+  _mediaUrls: new Map(),
   _draft: null,
+  _rewardDraft: null,
 
   draft() {
     if (!this._draft) this._draft = defaultCreatorDraft();
@@ -13,7 +26,18 @@ const CreatorStore = {
 
   resetDraft() {
     this._draft = defaultCreatorDraft();
+    CreatorDom?.syncNameField?.(this._draft);
     return this._draft;
+  },
+
+  rewardDraft() {
+    if (!this._rewardDraft) this._rewardDraft = defaultRewardDraft();
+    return this._rewardDraft;
+  },
+
+  resetRewardDraft() {
+    this._rewardDraft = defaultRewardDraft();
+    return this._rewardDraft;
   },
 
   async init() {
@@ -24,29 +48,88 @@ const CreatorStore = {
     return this._levels.slice().sort((a, b) => b.createdAt - a.createdAt);
   },
 
+  listRewards() {
+    return this._rewards.slice().sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  getReward(id) {
+    return this._rewards.find((r) => r.id === id) || null;
+  },
+
   async saveDraft() {
     const draft = { ...this._draft };
     const pendingMusic = draft._pendingMusic;
     delete draft._pendingMusic;
+    if (!draft.name?.trim()) draft.name = "MY STAGE";
     if (!draft.id) draft.id = `c_${Date.now()}`;
     draft.createdAt = Date.now();
     draft.author = Auth.displayName || "Guest";
     if (pendingMusic) {
       await this._putMusic(draft.id, pendingMusic);
       draft.hasMusic = true;
+      draft.musicSource = "upload";
+    }
+    const reward = this.getReward(draft.rewardId);
+    if (reward) {
+      draft.rewardName = reward.name;
+      draft.rewardBg = [...reward.bg];
+      draft.rewardGrid = [...reward.grid];
+      draft.rewardAccent = [...reward.accent];
+      draft.rewardMediaId = reward.mediaId || null;
     }
     await this._putLevel(draft);
     await this._loadAll();
+    const id = draft.id;
     this._draft = null;
+    return id;
+  },
+
+  async saveRewardDraft() {
+    const draft = { ...this._rewardDraft };
+    const pendingBg = draft._pendingBg;
+    const pendingCursor = draft._pendingCursor;
+    delete draft._pendingBg;
+    delete draft._pendingCursor;
+    if (!draft.id) draft.id = `r_${Date.now()}`;
+    draft.createdAt = Date.now();
+    if (pendingBg) {
+      draft.mediaId = `${draft.id}-bg`;
+      draft.mediaType = pendingBg.type.startsWith("video") ? "video" : "image";
+      await this._putMedia(draft.mediaId, pendingBg);
+      draft.hasMedia = true;
+    }
+    if (pendingCursor) {
+      draft.cursorId = `${draft.id}-cursor`;
+      await this._putMedia(draft.cursorId, pendingCursor);
+      draft.hasCursor = true;
+    }
+    await this._putReward(draft);
+    await this._loadAll();
+    this._rewardDraft = null;
     return draft.id;
   },
 
   async attachMusic(file) {
     if (!file || file.size > CREATOR_MUSIC_MAX) throw new Error("Music too large (max 8MB)");
     const draft = this.draft();
-    if (!draft._pendingMusic) draft._pendingMusic = file;
-    else draft._pendingMusic = file;
+    draft._pendingMusic = file;
     draft.hasMusic = true;
+    draft.musicSource = "upload";
+  },
+
+  async attachRewardBg(file) {
+    if (!file || file.size > CREATOR_MEDIA_MAX) throw new Error("File too large (max 12MB)");
+    const draft = this.rewardDraft();
+    draft._pendingBg = file;
+    draft.hasMedia = true;
+  },
+
+  async attachRewardCursor(file) {
+    if (!file || !file.type.startsWith("image/")) throw new Error("Cursor must be PNG/JPG");
+    if (file.size > 2 * 1024 * 1024) throw new Error("Cursor image max 2MB");
+    const draft = this.rewardDraft();
+    draft._pendingCursor = file;
+    draft.hasCursor = true;
   },
 
   async getMusicUrl(levelId) {
@@ -58,20 +141,25 @@ const CreatorStore = {
     return url;
   },
 
-  async deleteLevel(id) {
-    await this._deleteLevel(id);
-    const url = this._musicUrls.get(id);
-    if (url) URL.revokeObjectURL(url);
-    this._musicUrls.delete(id);
-    await this._loadAll();
+  async getMediaUrl(mediaId) {
+    if (!mediaId) return null;
+    if (this._mediaUrls.has(mediaId)) return this._mediaUrls.get(mediaId);
+    const blob = await this._getMedia(mediaId);
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    this._mediaUrls.set(mediaId, url);
+    return url;
   },
 
   _openDb() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(CREATOR_DB, 1);
+      const req = indexedDB.open(CREATOR_DB, CREATOR_DB_VERSION);
       req.onupgradeneeded = () => {
-        req.result.createObjectStore("levels");
-        req.result.createObjectStore("music");
+        const db = req.result;
+        if (!db.objectStoreNames.contains("levels")) db.createObjectStore("levels");
+        if (!db.objectStoreNames.contains("music")) db.createObjectStore("music");
+        if (!db.objectStoreNames.contains("rewards")) db.createObjectStore("rewards");
+        if (!db.objectStoreNames.contains("rewardMedia")) db.createObjectStore("rewardMedia");
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -80,9 +168,14 @@ const CreatorStore = {
 
   async _loadAll() {
     const db = await this._openDb();
-    this._levels = await new Promise((resolve, reject) => {
-      const tx = db.transaction("levels", "readonly");
-      const req = tx.objectStore("levels").getAll();
+    this._levels = await this._getAll(db, "levels");
+    this._rewards = await this._getAll(db, "rewards");
+  },
+
+  async _getAll(db, store) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readonly");
+      const req = tx.objectStore(store).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
@@ -90,9 +183,18 @@ const CreatorStore = {
 
   async _putLevel(level) {
     const db = await this._openDb();
+    await this._put(db, "levels", level, level.id);
+  },
+
+  async _putReward(reward) {
+    const db = await this._openDb();
+    await this._put(db, "rewards", reward, reward.id);
+  },
+
+  async _put(db, store, value, key) {
     await new Promise((resolve, reject) => {
-      const tx = db.transaction("levels", "readwrite");
-      tx.objectStore("levels").put(level, level.id);
+      const tx = db.transaction(store, "readwrite");
+      tx.objectStore(store).put(value, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -100,32 +202,30 @@ const CreatorStore = {
 
   async _putMusic(levelId, file) {
     const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("music", "readwrite");
-      tx.objectStore("music").put(file, levelId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await this._put(db, "music", file, levelId);
+  },
+
+  async _putMedia(mediaId, file) {
+    const db = await this._openDb();
+    await this._put(db, "rewardMedia", file, mediaId);
   },
 
   async _getMusic(levelId) {
     const db = await this._openDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction("music", "readonly");
-      const req = tx.objectStore("music").get(levelId);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    return this._get(db, "music", levelId);
   },
 
-  async _deleteLevel(id) {
+  async _getMedia(mediaId) {
     const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(["levels", "music"], "readwrite");
-      tx.objectStore("levels").delete(id);
-      tx.objectStore("music").delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    return this._get(db, "rewardMedia", mediaId);
+  },
+
+  async _get(db, store, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readonly");
+      const req = tx.objectStore(store).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
     });
   },
 };
@@ -133,44 +233,65 @@ const CreatorStore = {
 function defaultCreatorDraft() {
   return {
     id: null,
-    name: "MY STAGE",
+    name: "",
     bpm: 96,
     hitWindowMs: 2200,
     bombFuse: 4,
-    mechanicIndex: 1,
+    mechanics: { red: true, orange: false, purple: false, sliders: false, sliderRed: false },
+    musicSource: "track",
+    musicTrackId: 3,
+    hasMusic: false,
+    rewardId: null,
     rewardName: "STAGE REWARD",
     rewardBg: [18, 8, 32],
     rewardGrid: [60, 30, 90],
     rewardAccent: [255, 80, 180],
-    hasMusic: false,
     createdAt: 0,
     author: "",
   };
 }
 
-function applyCreatorDraftToLevel(meta, musicUrl) {
-  const preset = INFINITE_MECHANIC_PRESETS[meta.mechanicIndex ?? 0] || INFINITE_MECHANIC_PRESETS[0];
-  const rewardId = `creator-bg-${meta.id}`;
+function defaultRewardDraft() {
   return {
+    id: null,
+    name: "MY REWARD",
+    bg: [18, 8, 32],
+    grid: [60, 30, 90],
+    accent: [255, 80, 180],
+    hasMedia: false,
+    hasCursor: false,
+    mediaId: null,
+    cursorId: null,
+    mediaType: null,
+    createdAt: 0,
+  };
+}
+
+function applyCreatorDraftToLevel(meta, musicUrl) {
+  const m = meta.mechanics || {};
+  const sliders = !!m.sliders;
+  const rewardId = `creator-bg-${meta.id}`;
+  const level = {
     id: meta.id,
     communityId: meta.id,
     community: true,
-    communityMusicUrl: musicUrl || null,
-    name: meta.name,
+    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || null) : null,
+    musicSourceId: meta.musicSource === "track" ? `track${meta.musicTrackId || 1}` : null,
+    name: meta.name?.trim() || "MY STAGE",
     bpm: meta.bpm,
     hitWindowMs: meta.hitWindowMs,
     bombFuse: meta.bombFuse,
     duration: 30,
-    sliders: preset.sliders,
-    allowRed: preset.red,
-    allowOrange: preset.orange,
-    allowPurple: preset.purple,
-    sliderRed: preset.sliderRed,
-    redChance: preset.red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
-    orangeChance: preset.orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
-    purpleChance: preset.purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
-    sliderChance: preset.sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
-    sliderRedChance: preset.sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
+    sliders,
+    allowRed: !!m.red,
+    allowOrange: !!m.orange,
+    allowPurple: !!m.purple,
+    sliderRed: sliders && !!m.sliderRed,
+    redChance: m.red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
+    orangeChance: m.orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
+    purpleChance: m.purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
+    sliderChance: sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
+    sliderRedChance: sliders && m.sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
     passScore: 0,
     clearXp: 0,
     tutorial: null,
@@ -180,8 +301,10 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     rewardBg: meta.rewardBg,
     rewardGrid: meta.rewardGrid,
     rewardAccent: meta.rewardAccent,
-    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent },
+    rewardMediaId: meta.rewardMediaId || null,
+    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent, mediaId: meta.rewardMediaId || null },
   };
+  return level;
 }
 
 function unlockCommunityReward(save, level) {
@@ -192,6 +315,7 @@ function unlockCommunityReward(save, level) {
     bg: level.rewardBg,
     grid: level.rewardGrid,
     accent: level.rewardAccent,
+    mediaId: level.rewardMediaId || null,
     price: 0,
   };
   if (!save.creatorBackgrounds) save.creatorBackgrounds = [];
@@ -201,14 +325,22 @@ function unlockCommunityReward(save, level) {
   if (!save.clearedCommunity.includes(level.communityId)) save.clearedCommunity.push(level.communityId);
 }
 
-function cycleCreatorBpm(draft, delta) {
-  const steps = [72, 84, 96, 104, 112, 122, 128, 136, 142, 152, 160, 168];
+function adjustCreatorBpm(draft, delta) {
+  const steps = [72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 128, 136, 142, 152, 160, 168];
   const idx = steps.findIndex((b) => b >= draft.bpm);
   const i = Math.max(0, (idx < 0 ? 0 : idx) + delta);
   draft.bpm = steps[Math.max(0, Math.min(steps.length - 1, i))];
 }
 
-function cycleCreatorMechanics(draft, delta) {
-  const next = ((draft.mechanicIndex ?? 0) + delta + INFINITE_MECHANIC_PRESETS.length) % INFINITE_MECHANIC_PRESETS.length;
-  draft.mechanicIndex = next;
+function toggleCreatorMechanic(draft, key) {
+  if (!draft.mechanics) draft.mechanics = defaultCreatorDraft().mechanics;
+  draft.mechanics[key] = !draft.mechanics[key];
+  if (key === "sliders" && !draft.mechanics.sliders) draft.mechanics.sliderRed = false;
+}
+
+function cycleCreatorTrack(draft, delta) {
+  draft.musicTrackId = ((draft.musicTrackId || 1) - 1 + delta + LEVELS.length) % LEVELS.length + 1;
+  draft.musicSource = "track";
+  draft.hasMusic = false;
+  draft._pendingMusic = null;
 }

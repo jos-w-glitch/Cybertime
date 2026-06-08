@@ -39,7 +39,9 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/game.js" \
     "$ROOT/js/share.js" \
     "$ROOT/js/creator.js" \
+    "$ROOT/js/creator-dom.js" \
     "$ROOT/js/creator-ui.js" \
+    "$ROOT/js/creator-reward-ui.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 

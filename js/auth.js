@@ -1,3 +1,5 @@
+const DEVICE_SESSION_KEY = "cybertime-device-session";
+
 const Auth = {
   NAME_KEY: "cybertime-player-name",
   displayName: null,
@@ -5,8 +7,37 @@ const Auth = {
   init(onReady) {
     migrateLegacyPlayers();
     CloudStore.init();
+    const session = this.getDeviceSession();
+    if (session?.name && session?.pin) {
+      const nameEl = document.getElementById("player-name");
+      const pinEl = document.getElementById("player-pin");
+      if (nameEl) nameEl.value = session.name;
+      if (pinEl) pinEl.value = session.pin;
+      this.login(session.name, session.pin).then(() => {
+        this.hideNameScreen();
+        onReady(true);
+      });
+      return;
+    }
     this.hideNameScreen();
     onReady(true);
+  },
+
+  rememberDevice(name, pin) {
+    localStorage.setItem(DEVICE_SESSION_KEY, JSON.stringify({ name: name.trim(), pin }));
+  },
+
+  getDeviceSession() {
+    try {
+      const raw = localStorage.getItem(DEVICE_SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearDeviceSession() {
+    localStorage.removeItem(DEVICE_SESSION_KEY);
   },
 
   isLoggedIn() {
@@ -69,6 +100,7 @@ const Auth = {
       if (cloud?.ok) {
         applyCloudSave(cloud.name, cloud.saveData, pinCheck.pin);
         this.displayName = this.rememberPlayer(cloud.name);
+        this.rememberDevice(cloud.name, pinCheck.pin);
         return { ok: true, name: this.displayName, isNew: cloud.isNew };
       }
       if (cloud) return cloud;
@@ -91,6 +123,7 @@ const Auth = {
         writeAllSaves(saves);
         CloudStore.setPin(pin);
         this.displayName = this.rememberPlayer(canonical);
+        this.rememberDevice(canonical, pin);
       } catch {
         return { ok: false, reason: "Allow storage for this site" };
       }
@@ -105,6 +138,7 @@ const Auth = {
       writeAllSaves(saves);
       CloudStore.setPin(pin);
       this.displayName = this.rememberPlayer(canonical);
+      this.rememberDevice(canonical, pin);
     } catch {
       return { ok: false, reason: "Allow storage for this site" };
     }
@@ -114,6 +148,7 @@ const Auth = {
   logout() {
     this.displayName = null;
     CloudStore.setPin(null);
+    this.clearDeviceSession();
   },
 
   showLoginScreen() {

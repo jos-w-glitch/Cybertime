@@ -37,6 +37,10 @@ function btnHeight(size = 52) {
   return Math.round(size * mobileUiScale() * accessibilityScale());
 }
 
+function uiBtnHeight(size = 48) {
+  return Math.round(size);
+}
+
 function iconButtonSize() {
   return Math.round(ICON_BUTTON_SIZE * mobileUiScale());
 }
@@ -507,6 +511,8 @@ const CloudStore = {
     return entries;
   },
 };
+const DEVICE_SESSION_KEY = "cybertime-device-session";
+
 const Auth = {
   NAME_KEY: "cybertime-player-name",
   displayName: null,
@@ -514,8 +520,37 @@ const Auth = {
   init(onReady) {
     migrateLegacyPlayers();
     CloudStore.init();
+    const session = this.getDeviceSession();
+    if (session?.name && session?.pin) {
+      const nameEl = document.getElementById("player-name");
+      const pinEl = document.getElementById("player-pin");
+      if (nameEl) nameEl.value = session.name;
+      if (pinEl) pinEl.value = session.pin;
+      this.login(session.name, session.pin).then(() => {
+        this.hideNameScreen();
+        onReady(true);
+      });
+      return;
+    }
     this.hideNameScreen();
     onReady(true);
+  },
+
+  rememberDevice(name, pin) {
+    localStorage.setItem(DEVICE_SESSION_KEY, JSON.stringify({ name: name.trim(), pin }));
+  },
+
+  getDeviceSession() {
+    try {
+      const raw = localStorage.getItem(DEVICE_SESSION_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  },
+
+  clearDeviceSession() {
+    localStorage.removeItem(DEVICE_SESSION_KEY);
   },
 
   isLoggedIn() {
@@ -578,6 +613,7 @@ const Auth = {
       if (cloud?.ok) {
         applyCloudSave(cloud.name, cloud.saveData, pinCheck.pin);
         this.displayName = this.rememberPlayer(cloud.name);
+        this.rememberDevice(cloud.name, pinCheck.pin);
         return { ok: true, name: this.displayName, isNew: cloud.isNew };
       }
       if (cloud) return cloud;
@@ -600,6 +636,7 @@ const Auth = {
         writeAllSaves(saves);
         CloudStore.setPin(pin);
         this.displayName = this.rememberPlayer(canonical);
+        this.rememberDevice(canonical, pin);
       } catch {
         return { ok: false, reason: "Allow storage for this site" };
       }
@@ -614,6 +651,7 @@ const Auth = {
       writeAllSaves(saves);
       CloudStore.setPin(pin);
       this.displayName = this.rememberPlayer(canonical);
+      this.rememberDevice(canonical, pin);
     } catch {
       return { ok: false, reason: "Allow storage for this site" };
     }
@@ -623,6 +661,7 @@ const Auth = {
   logout() {
     this.displayName = null;
     CloudStore.setPin(null);
+    this.clearDeviceSession();
   },
 
   showLoginScreen() {
@@ -1262,6 +1301,15 @@ function resolveBackground(save) {
   };
 }
 
+const BgMediaCache = new Map();
+
+function preloadBgMedia(url) {
+  if (!url || BgMediaCache.has(url)) return;
+  const img = new Image();
+  img.onload = () => BgMediaCache.set(url, img);
+  img.src = url;
+}
+
 function drawBackgroundSwatch(ctx, x, y, w, h, item, save) {
   const preview = item.id === save.equippedBackground
     ? resolveBackground(save)
@@ -1398,24 +1446,30 @@ function drawIconButton(ctx, rect, img, hovered) {
 }
 
 function drawBackground(ctx, now, bgTheme, stars, save) {
-  const bg = save ? resolveBackground(save) : bgTheme;
+  const level = App?.game?.level;
+  const mediaUrl = level?._bgMediaUrl;
+  const mediaImg = mediaUrl && BgMediaCache ? BgMediaCache.get(mediaUrl) : null;
 
-  ctx.fillStyle = rgb(bg.bg);
-  ctx.fillRect(0, 0, viewW(), viewH());
-
-  ctx.strokeStyle = rgb(bg.grid);
-  ctx.lineWidth = 1;
-  for (let x = 0; x < viewW(); x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, viewH());
-    ctx.stroke();
-  }
-  for (let y = 0; y < viewH(); y += 50) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(viewW(), y);
-    ctx.stroke();
+  if (mediaImg) {
+    ctx.drawImage(mediaImg, 0, 0, viewW(), viewH());
+  } else {
+    const bg = save ? resolveBackground(save) : bgTheme;
+    ctx.fillStyle = rgb(bg.bg);
+    ctx.fillRect(0, 0, viewW(), viewH());
+    ctx.strokeStyle = rgb(bg.grid);
+    ctx.lineWidth = 1;
+    for (let x = 0; x < viewW(); x += 50) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, viewH());
+      ctx.stroke();
+    }
+    for (let y = 0; y < viewH(); y += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(viewW(), y);
+      ctx.stroke();
+    }
   }
 
   for (const star of stars || []) {
@@ -3115,12 +3169,25 @@ const Share = {
   },
 };
 const CREATOR_DB = "cybertime-creator";
+const CREATOR_DB_VERSION = 2;
 const CREATOR_MUSIC_MAX = 8 * 1024 * 1024;
+const CREATOR_MEDIA_MAX = 12 * 1024 * 1024;
+
+const CREATOR_MECH_KEYS = [
+  { key: "red", label: "RED BOMBS" },
+  { key: "orange", label: "ORANGE BOMBS" },
+  { key: "purple", label: "PURPLE PAIRS" },
+  { key: "sliders", label: "SLIDERS" },
+  { key: "sliderRed", label: "RED SLIDERS", needs: "sliders" },
+];
 
 const CreatorStore = {
   _levels: [],
+  _rewards: [],
   _musicUrls: new Map(),
+  _mediaUrls: new Map(),
   _draft: null,
+  _rewardDraft: null,
 
   draft() {
     if (!this._draft) this._draft = defaultCreatorDraft();
@@ -3129,7 +3196,18 @@ const CreatorStore = {
 
   resetDraft() {
     this._draft = defaultCreatorDraft();
+    CreatorDom?.syncNameField?.(this._draft);
     return this._draft;
+  },
+
+  rewardDraft() {
+    if (!this._rewardDraft) this._rewardDraft = defaultRewardDraft();
+    return this._rewardDraft;
+  },
+
+  resetRewardDraft() {
+    this._rewardDraft = defaultRewardDraft();
+    return this._rewardDraft;
   },
 
   async init() {
@@ -3140,29 +3218,88 @@ const CreatorStore = {
     return this._levels.slice().sort((a, b) => b.createdAt - a.createdAt);
   },
 
+  listRewards() {
+    return this._rewards.slice().sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  getReward(id) {
+    return this._rewards.find((r) => r.id === id) || null;
+  },
+
   async saveDraft() {
     const draft = { ...this._draft };
     const pendingMusic = draft._pendingMusic;
     delete draft._pendingMusic;
+    if (!draft.name?.trim()) draft.name = "MY STAGE";
     if (!draft.id) draft.id = `c_${Date.now()}`;
     draft.createdAt = Date.now();
     draft.author = Auth.displayName || "Guest";
     if (pendingMusic) {
       await this._putMusic(draft.id, pendingMusic);
       draft.hasMusic = true;
+      draft.musicSource = "upload";
+    }
+    const reward = this.getReward(draft.rewardId);
+    if (reward) {
+      draft.rewardName = reward.name;
+      draft.rewardBg = [...reward.bg];
+      draft.rewardGrid = [...reward.grid];
+      draft.rewardAccent = [...reward.accent];
+      draft.rewardMediaId = reward.mediaId || null;
     }
     await this._putLevel(draft);
     await this._loadAll();
+    const id = draft.id;
     this._draft = null;
+    return id;
+  },
+
+  async saveRewardDraft() {
+    const draft = { ...this._rewardDraft };
+    const pendingBg = draft._pendingBg;
+    const pendingCursor = draft._pendingCursor;
+    delete draft._pendingBg;
+    delete draft._pendingCursor;
+    if (!draft.id) draft.id = `r_${Date.now()}`;
+    draft.createdAt = Date.now();
+    if (pendingBg) {
+      draft.mediaId = `${draft.id}-bg`;
+      draft.mediaType = pendingBg.type.startsWith("video") ? "video" : "image";
+      await this._putMedia(draft.mediaId, pendingBg);
+      draft.hasMedia = true;
+    }
+    if (pendingCursor) {
+      draft.cursorId = `${draft.id}-cursor`;
+      await this._putMedia(draft.cursorId, pendingCursor);
+      draft.hasCursor = true;
+    }
+    await this._putReward(draft);
+    await this._loadAll();
+    this._rewardDraft = null;
     return draft.id;
   },
 
   async attachMusic(file) {
     if (!file || file.size > CREATOR_MUSIC_MAX) throw new Error("Music too large (max 8MB)");
     const draft = this.draft();
-    if (!draft._pendingMusic) draft._pendingMusic = file;
-    else draft._pendingMusic = file;
+    draft._pendingMusic = file;
     draft.hasMusic = true;
+    draft.musicSource = "upload";
+  },
+
+  async attachRewardBg(file) {
+    if (!file || file.size > CREATOR_MEDIA_MAX) throw new Error("File too large (max 12MB)");
+    const draft = this.rewardDraft();
+    draft._pendingBg = file;
+    draft.hasMedia = true;
+  },
+
+  async attachRewardCursor(file) {
+    if (!file || !file.type.startsWith("image/")) throw new Error("Cursor must be PNG/JPG");
+    if (file.size > 2 * 1024 * 1024) throw new Error("Cursor image max 2MB");
+    const draft = this.rewardDraft();
+    draft._pendingCursor = file;
+    draft.hasCursor = true;
   },
 
   async getMusicUrl(levelId) {
@@ -3174,20 +3311,25 @@ const CreatorStore = {
     return url;
   },
 
-  async deleteLevel(id) {
-    await this._deleteLevel(id);
-    const url = this._musicUrls.get(id);
-    if (url) URL.revokeObjectURL(url);
-    this._musicUrls.delete(id);
-    await this._loadAll();
+  async getMediaUrl(mediaId) {
+    if (!mediaId) return null;
+    if (this._mediaUrls.has(mediaId)) return this._mediaUrls.get(mediaId);
+    const blob = await this._getMedia(mediaId);
+    if (!blob) return null;
+    const url = URL.createObjectURL(blob);
+    this._mediaUrls.set(mediaId, url);
+    return url;
   },
 
   _openDb() {
     return new Promise((resolve, reject) => {
-      const req = indexedDB.open(CREATOR_DB, 1);
+      const req = indexedDB.open(CREATOR_DB, CREATOR_DB_VERSION);
       req.onupgradeneeded = () => {
-        req.result.createObjectStore("levels");
-        req.result.createObjectStore("music");
+        const db = req.result;
+        if (!db.objectStoreNames.contains("levels")) db.createObjectStore("levels");
+        if (!db.objectStoreNames.contains("music")) db.createObjectStore("music");
+        if (!db.objectStoreNames.contains("rewards")) db.createObjectStore("rewards");
+        if (!db.objectStoreNames.contains("rewardMedia")) db.createObjectStore("rewardMedia");
       };
       req.onsuccess = () => resolve(req.result);
       req.onerror = () => reject(req.error);
@@ -3196,9 +3338,14 @@ const CreatorStore = {
 
   async _loadAll() {
     const db = await this._openDb();
-    this._levels = await new Promise((resolve, reject) => {
-      const tx = db.transaction("levels", "readonly");
-      const req = tx.objectStore("levels").getAll();
+    this._levels = await this._getAll(db, "levels");
+    this._rewards = await this._getAll(db, "rewards");
+  },
+
+  async _getAll(db, store) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readonly");
+      const req = tx.objectStore(store).getAll();
       req.onsuccess = () => resolve(req.result || []);
       req.onerror = () => reject(req.error);
     });
@@ -3206,9 +3353,18 @@ const CreatorStore = {
 
   async _putLevel(level) {
     const db = await this._openDb();
+    await this._put(db, "levels", level, level.id);
+  },
+
+  async _putReward(reward) {
+    const db = await this._openDb();
+    await this._put(db, "rewards", reward, reward.id);
+  },
+
+  async _put(db, store, value, key) {
     await new Promise((resolve, reject) => {
-      const tx = db.transaction("levels", "readwrite");
-      tx.objectStore("levels").put(level, level.id);
+      const tx = db.transaction(store, "readwrite");
+      tx.objectStore(store).put(value, key);
       tx.oncomplete = () => resolve();
       tx.onerror = () => reject(tx.error);
     });
@@ -3216,32 +3372,30 @@ const CreatorStore = {
 
   async _putMusic(levelId, file) {
     const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("music", "readwrite");
-      tx.objectStore("music").put(file, levelId);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
+    await this._put(db, "music", file, levelId);
+  },
+
+  async _putMedia(mediaId, file) {
+    const db = await this._openDb();
+    await this._put(db, "rewardMedia", file, mediaId);
   },
 
   async _getMusic(levelId) {
     const db = await this._openDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction("music", "readonly");
-      const req = tx.objectStore("music").get(levelId);
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
+    return this._get(db, "music", levelId);
   },
 
-  async _deleteLevel(id) {
+  async _getMedia(mediaId) {
     const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction(["levels", "music"], "readwrite");
-      tx.objectStore("levels").delete(id);
-      tx.objectStore("music").delete(id);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
+    return this._get(db, "rewardMedia", mediaId);
+  },
+
+  async _get(db, store, key) {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(store, "readonly");
+      const req = tx.objectStore(store).get(key);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => reject(req.error);
     });
   },
 };
@@ -3249,44 +3403,65 @@ const CreatorStore = {
 function defaultCreatorDraft() {
   return {
     id: null,
-    name: "MY STAGE",
+    name: "",
     bpm: 96,
     hitWindowMs: 2200,
     bombFuse: 4,
-    mechanicIndex: 1,
+    mechanics: { red: true, orange: false, purple: false, sliders: false, sliderRed: false },
+    musicSource: "track",
+    musicTrackId: 3,
+    hasMusic: false,
+    rewardId: null,
     rewardName: "STAGE REWARD",
     rewardBg: [18, 8, 32],
     rewardGrid: [60, 30, 90],
     rewardAccent: [255, 80, 180],
-    hasMusic: false,
     createdAt: 0,
     author: "",
   };
 }
 
-function applyCreatorDraftToLevel(meta, musicUrl) {
-  const preset = INFINITE_MECHANIC_PRESETS[meta.mechanicIndex ?? 0] || INFINITE_MECHANIC_PRESETS[0];
-  const rewardId = `creator-bg-${meta.id}`;
+function defaultRewardDraft() {
   return {
+    id: null,
+    name: "MY REWARD",
+    bg: [18, 8, 32],
+    grid: [60, 30, 90],
+    accent: [255, 80, 180],
+    hasMedia: false,
+    hasCursor: false,
+    mediaId: null,
+    cursorId: null,
+    mediaType: null,
+    createdAt: 0,
+  };
+}
+
+function applyCreatorDraftToLevel(meta, musicUrl) {
+  const m = meta.mechanics || {};
+  const sliders = !!m.sliders;
+  const rewardId = `creator-bg-${meta.id}`;
+  const level = {
     id: meta.id,
     communityId: meta.id,
     community: true,
-    communityMusicUrl: musicUrl || null,
-    name: meta.name,
+    communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || null) : null,
+    musicSourceId: meta.musicSource === "track" ? `track${meta.musicTrackId || 1}` : null,
+    name: meta.name?.trim() || "MY STAGE",
     bpm: meta.bpm,
     hitWindowMs: meta.hitWindowMs,
     bombFuse: meta.bombFuse,
     duration: 30,
-    sliders: preset.sliders,
-    allowRed: preset.red,
-    allowOrange: preset.orange,
-    allowPurple: preset.purple,
-    sliderRed: preset.sliderRed,
-    redChance: preset.red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
-    orangeChance: preset.orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
-    purpleChance: preset.purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
-    sliderChance: preset.sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
-    sliderRedChance: preset.sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
+    sliders,
+    allowRed: !!m.red,
+    allowOrange: !!m.orange,
+    allowPurple: !!m.purple,
+    sliderRed: sliders && !!m.sliderRed,
+    redChance: m.red ? INFINITE_MECHANIC_DEFAULTS.redChance : 0,
+    orangeChance: m.orange ? INFINITE_MECHANIC_DEFAULTS.orangeChance : 0,
+    purpleChance: m.purple ? INFINITE_MECHANIC_DEFAULTS.purpleChance : 0,
+    sliderChance: sliders ? INFINITE_MECHANIC_DEFAULTS.sliderChance : 0,
+    sliderRedChance: sliders && m.sliderRed ? INFINITE_MECHANIC_DEFAULTS.sliderRedChance : 0,
     passScore: 0,
     clearXp: 0,
     tutorial: null,
@@ -3296,8 +3471,10 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     rewardBg: meta.rewardBg,
     rewardGrid: meta.rewardGrid,
     rewardAccent: meta.rewardAccent,
-    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent },
+    rewardMediaId: meta.rewardMediaId || null,
+    playBg: { bg: meta.rewardBg, grid: meta.rewardGrid, accent: meta.rewardAccent, mediaId: meta.rewardMediaId || null },
   };
+  return level;
 }
 
 function unlockCommunityReward(save, level) {
@@ -3308,6 +3485,7 @@ function unlockCommunityReward(save, level) {
     bg: level.rewardBg,
     grid: level.rewardGrid,
     accent: level.rewardAccent,
+    mediaId: level.rewardMediaId || null,
     price: 0,
   };
   if (!save.creatorBackgrounds) save.creatorBackgrounds = [];
@@ -3317,24 +3495,157 @@ function unlockCommunityReward(save, level) {
   if (!save.clearedCommunity.includes(level.communityId)) save.clearedCommunity.push(level.communityId);
 }
 
-function cycleCreatorBpm(draft, delta) {
-  const steps = [72, 84, 96, 104, 112, 122, 128, 136, 142, 152, 160, 168];
+function adjustCreatorBpm(draft, delta) {
+  const steps = [72, 76, 80, 84, 88, 92, 96, 100, 104, 108, 112, 116, 120, 128, 136, 142, 152, 160, 168];
   const idx = steps.findIndex((b) => b >= draft.bpm);
   const i = Math.max(0, (idx < 0 ? 0 : idx) + delta);
   draft.bpm = steps[Math.max(0, Math.min(steps.length - 1, i))];
 }
 
-function cycleCreatorMechanics(draft, delta) {
-  const next = ((draft.mechanicIndex ?? 0) + delta + INFINITE_MECHANIC_PRESETS.length) % INFINITE_MECHANIC_PRESETS.length;
-  draft.mechanicIndex = next;
+function toggleCreatorMechanic(draft, key) {
+  if (!draft.mechanics) draft.mechanics = defaultCreatorDraft().mechanics;
+  draft.mechanics[key] = !draft.mechanics[key];
+  if (key === "sliders" && !draft.mechanics.sliders) draft.mechanics.sliderRed = false;
 }
+
+function cycleCreatorTrack(draft, delta) {
+  draft.musicTrackId = ((draft.musicTrackId || 1) - 1 + delta + LEVELS.length) % LEVELS.length + 1;
+  draft.musicSource = "track";
+  draft.hasMusic = false;
+  draft._pendingMusic = null;
+}
+const CreatorDom = {
+  _nameRect: null,
+
+  init() {
+    const name = document.getElementById("creator-name-input");
+    name?.addEventListener("input", () => {
+      CreatorStore.draft().name = name.value.slice(0, 24);
+    });
+
+    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await CreatorStore.attachMusic(file);
+      } catch (err) {
+        console.error(err);
+      }
+      e.target.value = "";
+    });
+
+    document.getElementById("creator-reward-bg-input")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await CreatorStore.attachRewardBg(file);
+      } catch (err) {
+        console.error(err);
+      }
+      e.target.value = "";
+    });
+
+    document.getElementById("creator-reward-cursor-input")?.addEventListener("change", async (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      try {
+        await CreatorStore.attachRewardCursor(file);
+      } catch (err) {
+        console.error(err);
+      }
+      e.target.value = "";
+    });
+
+    document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
+    document.getElementById("creator-share-native")?.addEventListener("click", () => this._nativeShare());
+    document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
+  },
+
+  setActive(state) {
+    const showName = state === "creator" && CreatorUi.page === "stage";
+    const nameEl = document.getElementById("creator-name-input");
+    if (nameEl) nameEl.classList.toggle("hidden", !showName);
+    if (!showName) this._nameRect = null;
+  },
+
+  syncNameField(draft) {
+    const el = document.getElementById("creator-name-input");
+    if (el && el.value !== draft.name) el.value = draft.name || "";
+  },
+
+  positionNameField(rect) {
+    this._nameRect = rect;
+    const el = document.getElementById("creator-name-input");
+    const canvas = App?.canvas;
+    if (!el || !canvas || !rect) return;
+    const box = canvas.getBoundingClientRect();
+    const sx = box.width / viewW();
+    const sy = box.height / viewH();
+    el.style.left = `${box.left + rect.x * sx}px`;
+    el.style.top = `${box.top + rect.y * sy}px`;
+    el.style.width = `${rect.w * sx}px`;
+    el.style.height = `${rect.h * sy}px`;
+  },
+
+  showShareModal(stageName, levelId) {
+    const modal = document.getElementById("creator-share-modal");
+    const text = document.getElementById("creator-share-text");
+    if (!modal) return;
+    const link = this.shareLink(levelId);
+    if (text) {
+      text.textContent = `Published "${stageName}"! Friends can play it in CyberTime → LEVELS → COMMUNITY.${link ? ` Link: ${link}` : ""}`;
+    }
+    modal.classList.remove("hidden");
+    this._shareLevelId = levelId;
+    this._shareStageName = stageName;
+  },
+
+  hideShareModal() {
+    document.getElementById("creator-share-modal")?.classList.add("hidden");
+  },
+
+  shareLink(levelId) {
+    const base = window.location.origin + window.location.pathname;
+    return `${base}?community=${encodeURIComponent(levelId)}`;
+  },
+
+  shareMessage(stageName) {
+    return `I made a CyberTime stage: "${stageName}" — play it in Community Levels!`;
+  },
+
+  async _nativeShare() {
+    const msg = this.shareMessage(this._shareStageName || "My Stage");
+    const url = this.shareLink(this._shareLevelId);
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: "CyberTime Stage", text: msg, url });
+        return;
+      } catch {}
+    }
+    this._copyShareLink();
+  },
+
+  _copyShareLink() {
+    const msg = `${this.shareMessage(this._shareStageName || "My Stage")} ${this.shareLink(this._shareLevelId)}`;
+    navigator.clipboard?.writeText(msg.trim()).catch(() => {});
+  },
+};
 const CreatorUi = {
   levelsTab: "main",
+  page: "stage",
+  shareLevelId: null,
   rewardSliders: null,
   draggingRewardSlider: false,
 
   drawMenuSlot(slot, mousePos) {
     Screens.drawMenuSlot("creator", "CREATOR", slot, mousePos);
+  },
+
+  draw(save, mousePos, now) {
+    if (this.page === "rewards") CreatorRewardUi.drawRewards(save, mousePos, now);
+    else if (this.page === "pickReward") CreatorRewardUi.drawPickReward(save, mousePos, now);
+    else this.drawStage(save, mousePos, now);
+    CreatorDom.setActive(App.state);
   },
 
   drawLevels(save, mousePos, now) {
@@ -3343,14 +3654,14 @@ const CreatorUi = {
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = Screens.screenPad();
 
-    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SELECT STAGE", pad, Input.touchMode ? 72 : 80);
+    App.ctx.fillText("SELECT STAGE", pad, 76);
 
-    const tabW = Input.touchMode ? (viewW() - pad * 2 - 12) / 2 : 200;
-    const tabY = Input.touchMode ? 108 : 115;
-    drawNeonButton(App.ctx, Screens.btn("lvMain", "MAIN", pad, tabY, tabW, btnHeight(40)), "MAIN LEVELS", this.levelsTab === "main", true);
-    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", Input.touchMode ? pad + tabW + 12 : 300, tabY, tabW, btnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
+    const tabW = (viewW() - pad * 2 - 12) / 2;
+    const tabY = 108;
+    drawNeonButton(App.ctx, Screens.btn("lvMain", "MAIN", pad, tabY, tabW, uiBtnHeight(40)), "MAIN LEVELS", this.levelsTab === "main", true);
+    drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + 12, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
 
     if (this.levelsTab === "main") this._drawMainLevels(save, mousePos, pad);
     else this._drawCommunityLevels(save, mousePos, pad, tabY);
@@ -3360,15 +3671,10 @@ const CreatorUi = {
   },
 
   _drawMainLevels(save, mousePos, pad) {
-    App.ctx.font = gameFont(16);
-    App.ctx.fillStyle = rgb(COLORS.gray);
-    App.ctx.fillText(`${LEVELS.length} official stages`, pad, Input.touchMode ? 158 : 162);
-
     const rowH = Screens.listRowHeight();
-    const top = Input.touchMode ? 175 : 180;
+    const top = 175;
     const play = Screens.playBtnSize();
-    const content = top + LEVELS.length * rowH;
-    Screens.listMaxScroll = Math.max(0, content - (viewH() - 90));
+    Screens.listMaxScroll = Math.max(0, top + LEVELS.length * rowH - (viewH() - 90));
     Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
 
     App.ctx.save();
@@ -3377,45 +3683,25 @@ const CreatorUi = {
     App.ctx.clip();
 
     LEVELS.forEach((level) => {
-      const i = level.id - 1;
-      const y = top + i * rowH - Screens.scrollY;
-      if (y + rowH < top || y > viewH() - 40) return;
-
+      const y = top + (level.id - 1) * rowH - Screens.scrollY;
+      if (y + rowH < top || y > viewH() - 80) return;
       const unlocked = isLevelUnlocked(save, level);
-      const cleared = isLevelCleared(save, level.id);
-      const hs = save.highScores[level.id] || 0;
-      const rect = Screens.btn(`level-${level.id}`, unlocked ? "PLAY" : "LOCKED", viewW() - play.w - 24, y - 8, play.w, play.h);
-
-      App.ctx.font = gameFont(26);
+      const rect = Screens.btn(`level-${level.id}`, "PLAY", viewW() - play.w - 24, y - 8, play.w, play.h);
+      App.ctx.font = gameFont(24);
       App.ctx.fillStyle = rgb(unlocked ? COLORS.text : COLORS.gray);
-      App.ctx.fillText(`${level.id}. ${level.name}${cleared ? " ✓" : ""}`, pad, y + 18);
-      App.ctx.font = gameFont(16);
-      App.ctx.fillText(`${START_HEARTS} hearts | 30s | HS ${hs}`, pad, y + 42);
-      App.ctx.fillStyle = rgb(COLORS.purple);
-      App.ctx.fillText(level.featureHint, pad, y + 62);
-
+      App.ctx.fillText(`${level.id}. ${level.name}`, pad, y + 24);
       if (unlocked) drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
-      else {
-        App.ctx.fillStyle = rgb(COLORS.gray);
-        App.ctx.fillText("Clear previous stage", pad, y + 62);
-      }
     });
     App.ctx.restore();
   },
 
   _drawCommunityLevels(save, mousePos, pad, tabY) {
     const levels = CreatorStore.list();
-    const rowCount = levels.length + 1;
     const rowH = Screens.listRowHeight();
     const top = tabY + 55;
     const play = Screens.playBtnSize();
-    const content = top + rowCount * rowH;
-    Screens.listMaxScroll = Math.max(0, content - (viewH() - 90));
+    Screens.listMaxScroll = Math.max(0, top + (levels.length + 1) * rowH - (viewH() - 90));
     Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
-
-    App.ctx.font = gameFont(16);
-    App.ctx.fillStyle = rgb(COLORS.gray);
-    App.ctx.fillText(`${levels.length} community stages — scroll`, pad, top - 12);
 
     App.ctx.save();
     App.ctx.beginPath();
@@ -3424,133 +3710,123 @@ const CreatorUi = {
 
     const createY = top - Screens.scrollY;
     if (createY + rowH >= top && createY <= viewH() - 80) {
-      const createBtn = Screens.btn("openCreator", "+ CREATE STAGE", pad, createY, viewW() - pad * 2, btnHeight(48));
-      drawNeonButton(App.ctx, createBtn, "+ CREATE STAGE", pointInRect(mousePos, createBtn), true);
+      const btn = Screens.btn("openCreator", "+ CREATE", pad, createY, viewW() - pad * 2, uiBtnHeight(44));
+      drawNeonButton(App.ctx, btn, "+ CREATE STAGE", pointInRect(mousePos, btn), true);
     }
 
     levels.forEach((meta, i) => {
       const y = top + (i + 1) * rowH - Screens.scrollY;
       if (y + rowH < top || y > viewH() - 80) return;
-
-      const cleared = (save.clearedCommunity || []).includes(meta.id);
-      const hs = save.communityHighScores?.[meta.id] || 0;
       const rect = Screens.btn(`clevel-${meta.id}`, "PLAY", viewW() - play.w - 24, y - 8, play.w, play.h);
-
-      App.ctx.font = gameFont(24);
-      App.ctx.fillStyle = rgb(COLORS.text);
-      App.ctx.fillText(`${meta.name}${cleared ? " ✓" : ""}`, pad, y + 18);
+      App.ctx.font = gameFont(22);
+      App.ctx.fillText(`${meta.name}`, pad, y + 22);
       App.ctx.font = gameFont(16);
-      App.ctx.fillStyle = rgb(COLORS.gold);
-      App.ctx.fillText(`Reward: ${meta.rewardName}${cleared ? " (unlocked)" : ""}`, pad, y + 42);
       App.ctx.fillStyle = rgb(COLORS.gray);
-      App.ctx.fillText(`by ${meta.author || "Creator"} | HS ${hs}${meta.hasMusic ? " | custom music" : ""}`, pad, y + 62);
-
-      drawBackgroundSwatch(App.ctx, viewW() - pad - 88, y + 8, 64, 36, {
-        id: meta.id,
-        bg: meta.rewardBg,
-        grid: meta.rewardGrid,
-        accent: meta.rewardAccent,
-      }, save);
-
+      App.ctx.fillText(`by ${meta.author || "Creator"}`, pad, y + 48);
       drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
     });
     App.ctx.restore();
   },
 
-  drawCreator(save, mousePos, now) {
+  drawStage(save, mousePos, now) {
     Screens.resetButtons();
+    drawBackground(App.ctx, now, getBackgroundById(save.equippedBackground), App.stars, save);
     const draft = CreatorStore.draft();
-    const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars, save);
+    CreatorDom.syncNameField(draft);
     const pad = Screens.screenPad();
     const cardW = viewW() - pad * 2;
+    const rowH = 64;
+    const contentH = 720;
+    Screens.listMaxScroll = Math.max(0, contentH - (viewH() - 100));
+    const scroll = Screens.scrollY;
+    let y = 100 - scroll;
 
-    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("CYBERTIME CREATOR", pad, Input.touchMode ? 64 : 72);
+    App.ctx.fillText("CREATE STAGE", pad, 72);
 
-    this._updateCreatorScroll();
-    const startY = 110 - Screens.scrollY;
+    y = this._rowLabel("STAGE NAME", pad, y, cardW);
+    const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: uiBtnHeight(40) };
+    Screens.buttons.cgNameField = nameRect;
+    App.ctx.strokeStyle = rgb(COLORS.gray);
+    App.ctx.lineWidth = 2;
+    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
+    App.ctx.stroke();
+    CreatorDom.positionNameField(nameRect);
+    y += uiBtnHeight(40) + 14;
 
-    let y = startY;
-    y = this._drawCreatorRow("NAME", draft.name, "cgName", pad, y, cardW, mousePos);
-    y = this._drawCreatorRow(`BPM: ${draft.bpm}`, "CHANGE BPM", "cgBpm", pad, y, cardW, mousePos);
-    y = this._drawCreatorRow(infiniteMechanicName({ mechanicIndex: draft.mechanicIndex }), "MECHANICS", "cgMech", pad, y, cardW, mousePos);
-    y = this._drawCreatorRow(draft.hasMusic ? "MUSIC: READY" : "MUSIC: NONE", "UPLOAD MUSIC", "cgMusic", pad, y, cardW, mousePos);
-    y = this._drawCreatorRow(`REWARD: ${draft.rewardName}`, "RENAME REWARD", "cgRewardName", pad, y, cardW, mousePos);
+    y = this._rowLabel("BPM", pad, y, cardW);
+    const bpmY = y;
+    drawNeonButton(App.ctx, Screens.btn("cgBpmDown", "◀", pad, bpmY, 52, uiBtnHeight(40)), "◀", pointInRect(mousePos, Screens.buttons.cgBpmDown), true);
+    App.ctx.font = gameFont(28);
+    App.ctx.fillStyle = rgb(COLORS.text);
+    App.ctx.fillText(String(draft.bpm), pad + 70, bpmY + 28);
+    drawNeonButton(App.ctx, Screens.btn("cgBpmUp", "▶", pad + 130, bpmY, 52, uiBtnHeight(40)), "▶", pointInRect(mousePos, Screens.buttons.cgBpmUp), true);
+    y += uiBtnHeight(40) + 14;
 
-    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
-    App.ctx.fillRect(pad, y, cardW, 188);
-    App.ctx.font = uiFont(20);
-    App.ctx.fillStyle = rgb(COLORS.gold);
-    App.ctx.fillText("REWARD BACKGROUND (unlock on clear)", pad + 16, y + 28);
-    this.rewardSliders = {};
-    let sy = y + 44;
-    const keys = [
-      ["bg", "BG", draft.rewardBg],
-      ["grid", "GRID", draft.rewardGrid],
-      ["accent", "GLOW", draft.rewardAccent],
-    ];
-    for (const [key, label, rgbArr] of keys) {
-      const slider = { x: pad + 16, y: sy + 16, w: cardW - 32, label };
-      this.rewardSliders[key] = slider;
-      const factor = Math.max(0.12, Math.min(1, rgbArr[0] / 200));
-      drawSlider(App.ctx, slider, factor);
-      sy += 52;
+    y = this._rowLabel("MECHANICS", pad, y, cardW);
+    for (const item of CREATOR_MECH_KEYS) {
+      if (item.needs && !draft.mechanics[item.needs]) continue;
+      const on = !!draft.mechanics[item.key];
+      const box = Screens.btn(`cgMech-${item.key}`, on ? "ON" : "OFF", pad + 12, y, cardW - 24, uiBtnHeight(36));
+      drawNeonButton(App.ctx, box, `${on ? "☑" : "☐"} ${item.label}`, pointInRect(mousePos, box), true);
+      y += uiBtnHeight(36) + 8;
     }
-    y = sy + 16;
+    y += 6;
 
-    const btnH = btnHeight(44);
-    const half = (cardW - 12) / 2;
-    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST PLAY", pad, y, half, btnH), "TEST PLAY", pointInRect(mousePos, Screens.buttons.cgTest), true);
-    drawNeonButton(App.ctx, Screens.btn("cgSave", "SAVE STAGE", pad + half + 12, y, half, btnH), "SAVE STAGE", pointInRect(mousePos, Screens.buttons.cgSave), true);
-    y += btnH + 12;
-    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, btnH), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
+    y = this._rowLabel("MUSIC", pad, y, cardW);
+    const track = getLevelById(draft.musicTrackId || 1);
+    const musicLabel = draft.musicSource === "upload" ? "CUSTOM UPLOAD" : `${track.id}. ${track.name}`;
+    drawNeonButton(App.ctx, Screens.btn("cgTrackDown", "◀", pad, y, 52, uiBtnHeight(36)), "◀", pointInRect(mousePos, Screens.buttons.cgTrackDown), true);
+    App.ctx.font = uiFont(18);
+    App.ctx.fillStyle = rgb(COLORS.text);
+    App.ctx.fillText(musicLabel, pad + 70, y + 24);
+    drawNeonButton(App.ctx, Screens.btn("cgTrackUp", "▶", pad + cardW - 64, y, 52, uiBtnHeight(36)), "▶", pointInRect(mousePos, Screens.buttons.cgTrackUp), true);
+    y += uiBtnHeight(36) + 8;
+    drawNeonButton(App.ctx, Screens.btn("cgMusic", "UPLOAD MP3", pad + 12, y, cardW - 24, uiBtnHeight(36)), "UPLOAD MP3", pointInRect(mousePos, Screens.buttons.cgMusic), true);
+    y += uiBtnHeight(36) + 14;
 
-    drawBackgroundSwatch(App.ctx, viewW() - pad - 100, startY + 8, 80, 48, {
-      id: "preview",
-      bg: draft.rewardBg,
-      grid: draft.rewardGrid,
-      accent: draft.rewardAccent,
-    }, save);
+    y = this._rowLabel("REWARD", pad, y, cardW);
+    const reward = CreatorStore.getReward(draft.rewardId);
+    const rewardLine = reward ? reward.name : "None selected";
+    drawNeonButton(App.ctx, Screens.btn("cgPickReward", rewardLine, pad + 12, y, cardW - 140, uiBtnHeight(40)), rewardLine, pointInRect(mousePos, Screens.buttons.cgPickReward), true);
+    drawNeonButton(App.ctx, Screens.btn("cgEditRewards", "REWARDS", pad + cardW - 120, y, 108, uiBtnHeight(40)), "REWARDS", pointInRect(mousePos, Screens.buttons.cgEditRewards), true);
+    y += uiBtnHeight(40) + 14;
+
+    drawNeonButton(App.ctx, Screens.btn("cgTest", "TEST", pad, y, (cardW - 12) / 2, uiBtnHeight(44)), "TEST", pointInRect(mousePos, Screens.buttons.cgTest), true);
+    drawNeonButton(App.ctx, Screens.btn("cgPublish", "PUBLISH", pad + (cardW + 12) / 2, y, (cardW - 12) / 2, uiBtnHeight(44)), "PUBLISH", pointInRect(mousePos, Screens.buttons.cgPublish), true);
+    y += uiBtnHeight(44) + 10;
+    drawNeonButton(App.ctx, Screens.btn("cgBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgBack), true);
 
     Screens.finishButtons();
   },
 
-  _drawCreatorRow(label, btnLabel, btnId, pad, y, cardW, mousePos) {
-    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
-    App.ctx.fillRect(pad, y, cardW, 72);
-    App.ctx.font = uiFont(20);
-    App.ctx.fillStyle = rgb(COLORS.text);
-    App.ctx.fillText(label, pad + 16, y + 30);
-    const btn = Screens.btn(btnId, btnLabel, pad + cardW - 200, y + 16, 184, btnHeight(40));
-    drawNeonButton(App.ctx, btn, btnLabel, pointInRect(mousePos, btn), true);
-    return y + 80;
-  },
-
-  _updateCreatorScroll() {
-    Screens.listMaxScroll = Math.max(0, 620 - (viewH() - 100));
-    Screens.scrollY = Math.min(Screens.scrollY, Screens.listMaxScroll);
+  _rowLabel(text, pad, y, cardW) {
+    if (y < 90 || y > viewH()) return y;
+    App.ctx.font = uiFont(16);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText(text, pad + 12, y + 16);
+    return y + 24;
   },
 
   async launchCommunity(meta) {
-    const musicUrl = meta.hasMusic ? await CreatorStore.getMusicUrl(meta.id) : null;
+    const musicUrl = meta.musicSource === "upload" && meta.hasMusic ? await CreatorStore.getMusicUrl(meta.id) : null;
     App.launchGame(applyCreatorDraftToLevel(meta, musicUrl));
   },
 
   async testDraft() {
     const draft = { ...CreatorStore.draft(), id: "test", author: "Test" };
     let musicUrl = null;
-    if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
-    else if (draft.hasMusic && draft.id) musicUrl = await CreatorStore.getMusicUrl(draft.id);
+    if (draft.musicSource === "upload") {
+      if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
+      else if (draft.hasMusic && draft.id) musicUrl = await CreatorStore.getMusicUrl(draft.id);
+    }
     App.launchGame(applyCreatorDraftToLevel(draft, musicUrl));
   },
 
   handleLevelsClick(save, pos) {
     if (this._hit("lvMain", pos)) { this.levelsTab = "main"; Screens.resetScroll(); return true; }
     if (this._hit("lvCommunity", pos)) { this.levelsTab = "community"; Screens.resetScroll(); return true; }
-    if (App.leaderboardLevelId) return false;
-
     if (this.levelsTab === "main") {
       for (const level of LEVELS) {
         if (isLevelUnlocked(save, level) && this._hit(`level-${level.id}`, pos)) {
@@ -3560,69 +3836,207 @@ const CreatorUi = {
       }
       return false;
     }
-
     if (this._hit("openCreator", pos)) {
       CreatorStore.resetDraft();
+      this.page = "stage";
       Screens.resetScroll();
       App.state = "creator";
       return true;
     }
     for (const meta of CreatorStore.list()) {
-      if (this._hit(`clevel-${meta.id}`, pos)) {
-        this.launchCommunity(meta);
-        return true;
-      }
+      if (this._hit(`clevel-${meta.id}`, pos)) { this.launchCommunity(meta); return true; }
     }
     return false;
   },
 
-  handleCreatorClick(save, pos) {
+  handleClick(save, pos) {
+    if (this.page === "rewards") return CreatorRewardUi.handleRewardsClick(save, pos);
+    if (this.page === "pickReward") return CreatorRewardUi.handlePickClick(save, pos);
+    return this._handleStageClick(save, pos);
+  },
+
+  _handleStageClick(save, pos) {
     const draft = CreatorStore.draft();
     if (this._hit("cgBack", pos)) { App.state = "levels"; this.levelsTab = "community"; return true; }
-    if (this._hit("cgName", pos)) {
-      const names = ["MY STAGE", "NEON RUN", "BEAT LAB", "CYBER PULSE", "CUSTOM"];
-      const i = (names.indexOf(draft.name) + 1) % names.length;
-      draft.name = names[i];
-      return true;
-    }
-    if (this._hit("cgBpm", pos)) { cycleCreatorBpm(draft, 1); return true; }
-    if (this._hit("cgMech", pos)) { cycleCreatorMechanics(draft, 1); return true; }
+    if (this._hit("cgBpmDown", pos)) { adjustCreatorBpm(draft, -1); return true; }
+    if (this._hit("cgBpmUp", pos)) { adjustCreatorBpm(draft, 1); return true; }
+    if (this._hit("cgTrackDown", pos)) { cycleCreatorTrack(draft, -1); return true; }
+    if (this._hit("cgTrackUp", pos)) { cycleCreatorTrack(draft, 1); return true; }
     if (this._hit("cgMusic", pos)) { document.getElementById("creator-music-input")?.click(); return true; }
-    if (this._hit("cgRewardName", pos)) {
-      const names = ["STAGE REWARD", "NEON SKIN", "CREATOR BG", "RARE GRID"];
-      draft.rewardName = names[(names.indexOf(draft.rewardName) + 1) % names.length];
-      return true;
-    }
+    if (this._hit("cgEditRewards", pos)) { this.page = "rewards"; Screens.resetScroll(); return true; }
+    if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
-    if (this._hit("cgSave", pos)) {
-      CreatorStore.saveDraft().then(() => CreatorStore.init()).then(() => {
+    if (this._hit("cgPublish", pos)) {
+      const name = document.getElementById("creator-name-input")?.value?.trim() || draft.name;
+      draft.name = name;
+      CreatorStore.saveDraft().then((id) => {
+        CreatorDom.showShareModal(name || "My Stage", id);
         App.state = "levels";
         this.levelsTab = "community";
+        this.page = "stage";
       });
       return true;
     }
-    this._handleRewardSliderDrag(draft, pos);
-    return true;
-  },
-
-  _handleRewardSliderDrag(draft, pos) {
-    if (!this.rewardSliders) return;
-    const map = { bg: "rewardBg", grid: "rewardGrid", accent: "rewardAccent" };
-    for (const key of ["bg", "grid", "accent"]) {
-      const slider = this.rewardSliders[key];
-      const track = { x: slider.x, y: slider.y - 10, w: slider.w, h: 28 };
-      if (this.draggingRewardSlider || pointInRect(pos, track)) {
-        this.draggingRewardSlider = true;
-        const f = sliderValueFromPos(slider, pos);
-        const base = key === "bg" ? [18, 8, 32] : key === "grid" ? [60, 30, 90] : [255, 80, 180];
-        draft[map[key]] = base.map((c) => Math.round(c * (0.15 + 0.85 * f)));
-        return;
-      }
+    for (const item of CREATOR_MECH_KEYS) {
+      if (this._hit(`cgMech-${item.key}`, pos)) { toggleCreatorMechanic(draft, item.key); return true; }
     }
+    return true;
   },
 
   _hit(id, pos) {
     return Screens._hit(id, pos);
+  },
+};
+const CreatorRewardUi = {
+  rewardSliders: null,
+  draggingRewardSlider: false,
+
+  drawRewards(save, mousePos, now) {
+    Screens.resetButtons();
+    drawBackground(App.ctx, now, getBackgroundById(save.equippedBackground), App.stars, save);
+    const draft = CreatorStore.rewardDraft();
+    const pad = Screens.screenPad();
+    const cardW = viewW() - pad * 2;
+    Screens.listMaxScroll = Math.max(0, 780 - (viewH() - 100));
+    let y = 100 - Screens.scrollY;
+
+    App.ctx.font = gameFont(40);
+    App.ctx.fillStyle = rgb(COLORS.blue);
+    App.ctx.fillText("CREATE REWARD", pad, 72);
+
+    if (y > 80 && y < viewH()) {
+      App.ctx.font = uiFont(16);
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText("REWARD NAME", pad + 12, y + 16);
+      y += 24;
+      const nameBtn = Screens.btn("cgrName", draft.name, pad + 12, y, cardW - 24, uiBtnHeight(40));
+      drawNeonButton(App.ctx, nameBtn, draft.name, pointInRect(mousePos, nameBtn), true);
+      y += uiBtnHeight(40) + 14;
+    }
+
+    if (y > 80 && y < viewH()) {
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText("BACKGROUND — upload image or video", pad + 12, y + 16);
+      y += 24;
+      const bgBtn = Screens.btn("cgrBgUpload", draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pad + 12, y, cardW - 24, uiBtnHeight(40));
+      drawNeonButton(App.ctx, bgBtn, draft.hasMedia ? "MEDIA READY" : "UPLOAD BG", pointInRect(mousePos, bgBtn), true);
+      y += uiBtnHeight(40) + 10;
+    }
+
+    if (y > 80 && y < viewH()) {
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText("CURSOR — upload PNG", pad + 12, y + 16);
+      y += 24;
+      const curBtn = Screens.btn("cgrCursorUpload", draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pad + 12, y, cardW - 24, uiBtnHeight(40));
+      drawNeonButton(App.ctx, curBtn, draft.hasCursor ? "CURSOR READY" : "UPLOAD CURSOR", pointInRect(mousePos, curBtn), true);
+      y += uiBtnHeight(40) + 10;
+    }
+
+    if (y > 80 && y < viewH()) {
+      App.ctx.fillStyle = rgb(COLORS.gold);
+      App.ctx.fillText("OR tune grid colors", pad + 12, y + 16);
+      y += 28;
+      this.rewardSliders = {};
+      for (const [key, label] of [["bg", "BG"], ["grid", "GRID"], ["accent", "GLOW"]]) {
+        const slider = { x: pad + 16, y: y + 8, w: cardW - 32, label };
+        this.rewardSliders[key] = slider;
+        const arr = draft[key];
+        drawSlider(App.ctx, slider, Math.max(0.12, Math.min(1, arr[0] / 200)));
+        y += 48;
+      }
+      y += 8;
+    }
+
+    if (y > 80 && y < viewH()) {
+      drawNeonButton(App.ctx, Screens.btn("cgrSave", "SAVE REWARD", pad, y, cardW, uiBtnHeight(44)), "SAVE REWARD", pointInRect(mousePos, Screens.buttons.cgrSave), true);
+      y += uiBtnHeight(44) + 10;
+      drawNeonButton(App.ctx, Screens.btn("cgrBack", "BACK", pad, y, cardW, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgrBack), true);
+    }
+
+    Screens.finishButtons();
+  },
+
+  drawPickReward(save, mousePos, now) {
+    Screens.resetButtons();
+    drawBackground(App.ctx, now, getBackgroundById(save.equippedBackground), App.stars, save);
+    const pad = Screens.screenPad();
+    const rewards = CreatorStore.listRewards();
+    const rowH = 56;
+    Screens.listMaxScroll = Math.max(0, 120 + rewards.length * rowH - (viewH() - 120));
+
+    App.ctx.font = gameFont(40);
+    App.ctx.fillStyle = rgb(COLORS.blue);
+    App.ctx.fillText("PICK REWARD", pad, 72);
+
+    App.ctx.save();
+    App.ctx.beginPath();
+    App.ctx.rect(0, 100, viewW(), viewH() - 160);
+    App.ctx.clip();
+
+    rewards.forEach((r, i) => {
+      const y = 110 + i * rowH - Screens.scrollY;
+      if (y + rowH < 100 || y > viewH() - 80) return;
+      const btn = Screens.btn(`cgp-${r.id}`, r.name, pad, y, viewW() - pad * 2, uiBtnHeight(44));
+      drawNeonButton(App.ctx, btn, r.name, pointInRect(mousePos, btn), true);
+    });
+    App.ctx.restore();
+
+    drawNeonButton(App.ctx, Screens.btn("cgpNew", "+ NEW REWARD", pad, viewH() - 130, viewW() - pad * 2, uiBtnHeight(40)), "+ NEW REWARD", pointInRect(mousePos, Screens.buttons.cgpNew), true);
+    drawNeonButton(App.ctx, Screens.btn("cgpBack", "BACK", pad, viewH() - 82, viewW() - pad * 2, uiBtnHeight(40)), "BACK", pointInRect(mousePos, Screens.buttons.cgpBack), true);
+    Screens.finishButtons();
+  },
+
+  handleRewardsClick(save, pos) {
+    const draft = CreatorStore.rewardDraft();
+    if (Screens._hit("cgrBack", pos)) { CreatorUi.page = "stage"; return true; }
+    if (Screens._hit("cgrName", pos)) {
+      const names = ["STAGE REWARD", "NEON SKIN", "CREATOR BG", "RARE GRID", "MY PRIZE"];
+      draft.name = names[(names.indexOf(draft.name) + 1) % names.length];
+      return true;
+    }
+    if (Screens._hit("cgrBgUpload", pos)) { document.getElementById("creator-reward-bg-input")?.click(); return true; }
+    if (Screens._hit("cgrCursorUpload", pos)) { document.getElementById("creator-reward-cursor-input")?.click(); return true; }
+    if (Screens._hit("cgrSave", pos)) {
+      CreatorStore.saveRewardDraft().then(() => { CreatorUi.page = "pickReward"; });
+      return true;
+    }
+    this._handleSliderDrag(draft, pos);
+    return true;
+  },
+
+  handlePickClick(save, pos) {
+    const draft = CreatorStore.draft();
+    if (Screens._hit("cgpBack", pos)) { CreatorUi.page = "stage"; return true; }
+    if (Screens._hit("cgpNew", pos)) { CreatorStore.resetRewardDraft(); CreatorUi.page = "rewards"; Screens.resetScroll(); return true; }
+    for (const r of CreatorStore.listRewards()) {
+      if (Screens._hit(`cgp-${r.id}`, pos)) {
+        draft.rewardId = r.id;
+        draft.rewardName = r.name;
+        draft.rewardBg = r.bg;
+        draft.rewardGrid = r.grid;
+        draft.rewardAccent = r.accent;
+        draft.rewardMediaId = r.mediaId || null;
+        CreatorUi.page = "stage";
+        return true;
+      }
+    }
+    return true;
+  },
+
+  _handleSliderDrag(draft, pos) {
+    const map = { bg: "bg", grid: "grid", accent: "accent" };
+    const bases = { bg: [18, 8, 32], grid: [60, 30, 90], accent: [255, 80, 180] };
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = this.rewardSliders?.[key];
+      if (!slider) continue;
+      const track = { x: slider.x, y: slider.y - 10, w: slider.w, h: 28 };
+      if (this.draggingRewardSlider || pointInRect(pos, track)) {
+        this.draggingRewardSlider = true;
+        const f = sliderValueFromPos(slider, pos);
+        draft[map[key]] = bases[key].map((c) => Math.round(c * (0.15 + 0.85 * f)));
+        return;
+      }
+    }
   },
 };
 const Screens = {
@@ -3665,13 +4079,13 @@ const Screens = {
   },
 
   bottomActionY(btnH = null) {
-    const h = btnH ?? btnHeight(Input.touchMode ? 52 : 48);
-    return viewH() - (Input.touchMode ? 88 : 72) - h;
+    const h = btnH ?? uiBtnHeight(48);
+    return viewH() - 72 - h;
   },
 
   drawActionButton(id, label, y, mousePos, opts = {}) {
     const w = opts.w ?? this.actionButtonWidth();
-    const h = opts.h ?? btnHeight(Input.touchMode ? 52 : 48);
+    const h = opts.h ?? uiBtnHeight(opts.small ? 44 : 48);
     const x = opts.x ?? this.actionButtonX(w);
     const rect = this.btn(id, label, x, y, w, h);
     drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), !!opts.small);
@@ -3684,8 +4098,8 @@ const Screens = {
     const gap = this.buttonStackGap();
     const colGap = gap;
     const halfW = (fullW - colGap) / 2;
-    const primaryH = btnHeight(Input.touchMode ? 68 : 60);
-    const rowH = btnHeight(Input.touchMode ? 54 : 50);
+    const primaryH = uiBtnHeight(58);
+    const rowH = uiBtnHeight(46);
     let y = Input.touchMode ? 288 : 308;
 
     const slots = {
@@ -3935,7 +4349,11 @@ const Screens = {
     App.ctx.fillStyle = rgb(COLORS.text);
     App.ctx.fillText("Tap NEXT to cycle track and mechanics", blockX, Input.touchMode ? 102 : 115);
 
-    let y = Input.touchMode ? 138 : 165;
+    const panelTop = Input.touchMode ? 128 : 158;
+    const panelH = Input.touchMode ? 230 : 210;
+    drawUiPanel(App.ctx, { x: blockX - 16, y: panelTop - 10, w: blockW + 32, h: panelH });
+
+    let y = panelTop + 8;
     y = this.drawInfiniteCycleBlock(
       "TRACK",
       `${level.id}. ${level.name}`,
@@ -3957,14 +4375,13 @@ const Screens = {
 
     App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
     App.ctx.fillStyle = rgb(COLORS.green);
-    App.ctx.fillText(`BEST SCORE: ${best}`, blockX, y + 8);
+    App.ctx.fillText(`BEST SCORE: ${best}`, blockX, panelTop + panelH + 12);
 
     const btnW = this.actionButtonWidth();
-    const playH = btnHeight(Input.touchMode ? 58 : 54);
-    const backH = btnHeight(Input.touchMode ? 52 : 48);
+    const playH = uiBtnHeight(52);
+    const backH = uiBtnHeight(44);
     const backY = this.bottomActionY(backH);
     const playY = backY - playH - this.buttonStackGap();
-    drawUiPanel(App.ctx, { x: blockX - 16, y: Input.touchMode ? 58 : 64, w: blockW + 32, h: y + 36 });
     this.drawActionButton("infPlay", "PLAY", playY, mousePos, { w: btnW, h: playH });
     this.drawActionButton("back", "BACK", backY, mousePos, { w: btnW, h: backH, small: true });
     this.finishButtons();
@@ -4101,39 +4518,28 @@ const Screens = {
     const btnW = this.actionButtonWidth();
     const btnX = this.actionButtonX(btnW);
     const stackGap = this.buttonStackGap();
-    const btnH = btnHeight(44);
+    const btnH = uiBtnHeight(44);
     const halfW = (btnW - stackGap) / 2;
 
-    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SETTINGS", pad, Input.touchMode ? 72 : 90);
+    App.ctx.fillText("SETTINGS", pad, 80);
 
     const sliderW = btnW - 32;
-    this.sliders.music = { x: btnX + 16, y: Input.touchMode ? 118 : 140, w: sliderW, label: "MUSIC" };
-    this.sliders.sfx = { x: btnX + 16, y: Input.touchMode ? 188 : 210, w: sliderW, label: "SFX" };
+    this.sliders.music = { x: btnX + 16, y: 130, w: sliderW, label: "MUSIC" };
+    this.sliders.sfx = { x: btnX + 16, y: 200, w: sliderW, label: "SFX" };
     drawSlider(App.ctx, this.sliders.music, save.settings.musicVolume);
     drawSlider(App.ctx, this.sliders.sfx, save.settings.sfxVolume);
 
-    App.ctx.font = uiFont(Input.touchMode ? 18 : 22);
+    App.ctx.font = uiFont(20);
     App.ctx.fillStyle = rgb(COLORS.text);
     const playerLine = Auth.isLoggedIn()
       ? `PLAYER: ${Auth.displayName}`
-      : "GUEST — scores won't appear on leaderboard";
-    App.ctx.fillText(playerLine, btnX + 16, Input.touchMode ? 258 : 280);
+      : "GUEST — login to save progress";
+    App.ctx.fillText(playerLine, btnX + 16, 268);
 
-    let y = Input.touchMode ? 286 : 310;
-    const panelH = (Input.touchMode ? 3 : 4) * (btnH + stackGap) + 48;
-    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: panelH });
-
-    if (!Input.touchMode) {
-      this.drawMenuSlot("remapBall", this.waitingKey === "ball" ? "PRESS..." : "BALL KEY", { x: btnX, y, w: halfW, h: btnH }, mousePos);
-      this.drawMenuSlot("remapBomb", this.waitingKey === "bomb" ? "PRESS..." : "BOMB KEY", { x: btnX + halfW + stackGap, y, w: halfW, h: btnH }, mousePos);
-      y += btnH + stackGap;
-    }
-
-    const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
-    this.drawActionButton("toggleAccessibility", accLabel, y, mousePos, { w: btnW, h: btnH, small: true });
-    y += btnH + stackGap;
+    let y = 300;
+    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: btnH + stackGap + btnH + 40 });
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
     this.drawMenuSlot("account", accountLabel, { x: btnX, y, w: halfW, h: btnH }, mousePos);
@@ -4141,10 +4547,10 @@ const Screens = {
     if (!PwaInstall.isStandalone() && Input.touchMode) {
       y += btnH + stackGap;
       const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
-      this.drawActionButton("installApp", installLabel, y, mousePos, { w: btnW, h: btnHeight(48), small: true });
+      this.drawActionButton("installApp", installLabel, y, mousePos, { w: btnW, h: uiBtnHeight(44), small: true });
     }
 
-    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { w: btnW, h: btnHeight(48), small: true });
+    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { w: btnW, h: uiBtnHeight(44), small: true });
     this.finishButtons();
   },
 
@@ -4283,7 +4689,13 @@ const Screens = {
     if (state === "menu") {
       if (this._hit("start", pos)) { App.requestStartGame(getLevelById(1)); return true; }
       if (this._hit("levels", pos)) { CreatorUi.levelsTab = "main"; this.resetScroll(); App.state = "levels"; return true; }
-      if (this._hit("creator", pos)) { CreatorStore.resetDraft(); this.resetScroll(); App.state = "creator"; return true; }
+      if (this._hit("creator", pos)) {
+        CreatorStore.resetDraft();
+        CreatorUi.page = "stage";
+        this.resetScroll();
+        App.state = "creator";
+        return true;
+      }
       if (this._hit("infinite", pos)) {
         this.infiniteSetup = this.defaultInfiniteSetup();
         App.state = "infinite";
@@ -4307,7 +4719,7 @@ const Screens = {
     }
 
     if (state === "creator") {
-      CreatorUi.handleCreatorClick(save, pos);
+      CreatorUi.handleClick(save, pos);
       return true;
     }
 
@@ -4345,19 +4757,12 @@ const Screens = {
     }
 
     if (state === "settings") {
-      if (this._hit("remapBall", pos)) { this.waitingKey = "ball"; return true; }
-      if (this._hit("remapBomb", pos)) { this.waitingKey = "bomb"; return true; }
       if (this._hit("toggleMobile", pos)) {
         Input.touchMode = !Input.touchMode;
         applyViewport(App.canvas);
         App.stars = createStars();
         MobileShell.syncRotatePrompt();
         if (App.canvas) App.canvas.style.cursor = Input.touchMode ? "default" : "none";
-        return true;
-      }
-      if (this._hit("toggleAccessibility", pos)) {
-        save.settings.accessibility = !save.settings.accessibility;
-        writeSave(save);
         return true;
       }
       if (this._hit("account", pos)) {
@@ -4499,7 +4904,7 @@ const App = {
     UiIcons.load();
     this.bindEvents();
     this.bindNameForm();
-    this.bindCreatorMusic();
+    CreatorDom.init();
 
     Auth.init(() => this.startSession());
 
@@ -4550,19 +4955,6 @@ const App = {
     Auth.updatePinHint("");
   },
 
-  bindCreatorMusic() {
-    document.getElementById("creator-music-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      try {
-        await CreatorStore.attachMusic(file);
-      } catch (err) {
-        console.error(err);
-      }
-      e.target.value = "";
-    });
-  },
-
   tryLogin() {
     const name = document.getElementById("player-name")?.value || "";
     const pin = document.getElementById("player-pin")?.value || "";
@@ -4596,6 +4988,11 @@ const App = {
       this.stars = createStars();
       AudioEngine.setVolumes(this.save.settings);
       CreatorStore.init().catch(() => {});
+      const communityParam = new URLSearchParams(window.location.search).get("community");
+      if (communityParam) {
+        CreatorUi.levelsTab = "community";
+        this.state = "levels";
+      }
       Auth.hideNameScreen();
       this.sessionReady = true;
       if (this.state !== "game" || !this.game?.running) {
@@ -4673,8 +5070,8 @@ const App = {
       if (this.state === "shop" && Screens.draggingBgSlider) {
         Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
       }
-      if (this.state === "creator" && CreatorUi.draggingRewardSlider) {
-        CreatorUi._handleRewardSliderDrag(CreatorStore.draft(), Input.mousePos);
+      if (this.state === "creator" && CreatorRewardUi.draggingRewardSlider) {
+        CreatorRewardUi._handleSliderDrag(CreatorStore.rewardDraft(), Input.mousePos);
       }
     });
 
@@ -4687,7 +5084,7 @@ const App = {
       }
       Screens.draggingSlider = false;
       Screens.draggingBgSlider = false;
-      CreatorUi.draggingRewardSlider = false;
+      CreatorRewardUi.draggingRewardSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {
@@ -4768,6 +5165,13 @@ const App = {
     AudioEngine.stopMusic();
     this.lastLevel = level;
     this.game = createGame(level, 0);
+    if (level.playBg?.mediaId) {
+      CreatorStore.getMediaUrl(level.playBg.mediaId).then((url) => {
+        if (!url) return;
+        level._bgMediaUrl = url;
+        preloadBgMedia(url);
+      });
+    }
     this.state = "game";
     if (Input.touchMode) await MobileShell.enterPlayMode();
     await AudioEngine.resume();
@@ -4840,7 +5244,7 @@ const App = {
         Screens.drawLevels(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "creator") {
-        CreatorUi.drawCreator(this.save, mousePos, now);
+        CreatorUi.draw(this.save, mousePos, now);
         this.renderCursor(this.save);
       } else if (this.state === "infinite") {
         Screens.drawInfiniteSelect(this.save, mousePos, now);

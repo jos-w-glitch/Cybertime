@@ -38,13 +38,13 @@ const Screens = {
   },
 
   bottomActionY(btnH = null) {
-    const h = btnH ?? btnHeight(Input.touchMode ? 52 : 48);
-    return viewH() - (Input.touchMode ? 88 : 72) - h;
+    const h = btnH ?? uiBtnHeight(48);
+    return viewH() - 72 - h;
   },
 
   drawActionButton(id, label, y, mousePos, opts = {}) {
     const w = opts.w ?? this.actionButtonWidth();
-    const h = opts.h ?? btnHeight(Input.touchMode ? 52 : 48);
+    const h = opts.h ?? uiBtnHeight(opts.small ? 44 : 48);
     const x = opts.x ?? this.actionButtonX(w);
     const rect = this.btn(id, label, x, y, w, h);
     drawNeonButton(App.ctx, rect, label, pointInRect(mousePos, rect), !!opts.small);
@@ -57,8 +57,8 @@ const Screens = {
     const gap = this.buttonStackGap();
     const colGap = gap;
     const halfW = (fullW - colGap) / 2;
-    const primaryH = btnHeight(Input.touchMode ? 68 : 60);
-    const rowH = btnHeight(Input.touchMode ? 54 : 50);
+    const primaryH = uiBtnHeight(58);
+    const rowH = uiBtnHeight(46);
     let y = Input.touchMode ? 288 : 308;
 
     const slots = {
@@ -308,7 +308,11 @@ const Screens = {
     App.ctx.fillStyle = rgb(COLORS.text);
     App.ctx.fillText("Tap NEXT to cycle track and mechanics", blockX, Input.touchMode ? 102 : 115);
 
-    let y = Input.touchMode ? 138 : 165;
+    const panelTop = Input.touchMode ? 128 : 158;
+    const panelH = Input.touchMode ? 230 : 210;
+    drawUiPanel(App.ctx, { x: blockX - 16, y: panelTop - 10, w: blockW + 32, h: panelH });
+
+    let y = panelTop + 8;
     y = this.drawInfiniteCycleBlock(
       "TRACK",
       `${level.id}. ${level.name}`,
@@ -330,14 +334,13 @@ const Screens = {
 
     App.ctx.font = uiFont(Input.touchMode ? 18 : 20);
     App.ctx.fillStyle = rgb(COLORS.green);
-    App.ctx.fillText(`BEST SCORE: ${best}`, blockX, y + 8);
+    App.ctx.fillText(`BEST SCORE: ${best}`, blockX, panelTop + panelH + 12);
 
     const btnW = this.actionButtonWidth();
-    const playH = btnHeight(Input.touchMode ? 58 : 54);
-    const backH = btnHeight(Input.touchMode ? 52 : 48);
+    const playH = uiBtnHeight(52);
+    const backH = uiBtnHeight(44);
     const backY = this.bottomActionY(backH);
     const playY = backY - playH - this.buttonStackGap();
-    drawUiPanel(App.ctx, { x: blockX - 16, y: Input.touchMode ? 58 : 64, w: blockW + 32, h: y + 36 });
     this.drawActionButton("infPlay", "PLAY", playY, mousePos, { w: btnW, h: playH });
     this.drawActionButton("back", "BACK", backY, mousePos, { w: btnW, h: backH, small: true });
     this.finishButtons();
@@ -474,39 +477,28 @@ const Screens = {
     const btnW = this.actionButtonWidth();
     const btnX = this.actionButtonX(btnW);
     const stackGap = this.buttonStackGap();
-    const btnH = btnHeight(44);
+    const btnH = uiBtnHeight(44);
     const halfW = (btnW - stackGap) / 2;
 
-    App.ctx.font = gameFont(Input.touchMode ? 40 : 48);
+    App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SETTINGS", pad, Input.touchMode ? 72 : 90);
+    App.ctx.fillText("SETTINGS", pad, 80);
 
     const sliderW = btnW - 32;
-    this.sliders.music = { x: btnX + 16, y: Input.touchMode ? 118 : 140, w: sliderW, label: "MUSIC" };
-    this.sliders.sfx = { x: btnX + 16, y: Input.touchMode ? 188 : 210, w: sliderW, label: "SFX" };
+    this.sliders.music = { x: btnX + 16, y: 130, w: sliderW, label: "MUSIC" };
+    this.sliders.sfx = { x: btnX + 16, y: 200, w: sliderW, label: "SFX" };
     drawSlider(App.ctx, this.sliders.music, save.settings.musicVolume);
     drawSlider(App.ctx, this.sliders.sfx, save.settings.sfxVolume);
 
-    App.ctx.font = uiFont(Input.touchMode ? 18 : 22);
+    App.ctx.font = uiFont(20);
     App.ctx.fillStyle = rgb(COLORS.text);
     const playerLine = Auth.isLoggedIn()
       ? `PLAYER: ${Auth.displayName}`
-      : "GUEST — scores won't appear on leaderboard";
-    App.ctx.fillText(playerLine, btnX + 16, Input.touchMode ? 258 : 280);
+      : "GUEST — login to save progress";
+    App.ctx.fillText(playerLine, btnX + 16, 268);
 
-    let y = Input.touchMode ? 286 : 310;
-    const panelH = (Input.touchMode ? 3 : 4) * (btnH + stackGap) + 48;
-    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: panelH });
-
-    if (!Input.touchMode) {
-      this.drawMenuSlot("remapBall", this.waitingKey === "ball" ? "PRESS..." : "BALL KEY", { x: btnX, y, w: halfW, h: btnH }, mousePos);
-      this.drawMenuSlot("remapBomb", this.waitingKey === "bomb" ? "PRESS..." : "BOMB KEY", { x: btnX + halfW + stackGap, y, w: halfW, h: btnH }, mousePos);
-      y += btnH + stackGap;
-    }
-
-    const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
-    this.drawActionButton("toggleAccessibility", accLabel, y, mousePos, { w: btnW, h: btnH, small: true });
-    y += btnH + stackGap;
+    let y = 300;
+    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: btnH + stackGap + btnH + 40 });
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
     this.drawMenuSlot("account", accountLabel, { x: btnX, y, w: halfW, h: btnH }, mousePos);
@@ -514,10 +506,10 @@ const Screens = {
     if (!PwaInstall.isStandalone() && Input.touchMode) {
       y += btnH + stackGap;
       const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
-      this.drawActionButton("installApp", installLabel, y, mousePos, { w: btnW, h: btnHeight(48), small: true });
+      this.drawActionButton("installApp", installLabel, y, mousePos, { w: btnW, h: uiBtnHeight(44), small: true });
     }
 
-    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { w: btnW, h: btnHeight(48), small: true });
+    this.drawActionButton("back", "BACK", this.bottomActionY(), mousePos, { w: btnW, h: uiBtnHeight(44), small: true });
     this.finishButtons();
   },
 
@@ -656,7 +648,13 @@ const Screens = {
     if (state === "menu") {
       if (this._hit("start", pos)) { App.requestStartGame(getLevelById(1)); return true; }
       if (this._hit("levels", pos)) { CreatorUi.levelsTab = "main"; this.resetScroll(); App.state = "levels"; return true; }
-      if (this._hit("creator", pos)) { CreatorStore.resetDraft(); this.resetScroll(); App.state = "creator"; return true; }
+      if (this._hit("creator", pos)) {
+        CreatorStore.resetDraft();
+        CreatorUi.page = "stage";
+        this.resetScroll();
+        App.state = "creator";
+        return true;
+      }
       if (this._hit("infinite", pos)) {
         this.infiniteSetup = this.defaultInfiniteSetup();
         App.state = "infinite";
@@ -680,7 +678,7 @@ const Screens = {
     }
 
     if (state === "creator") {
-      CreatorUi.handleCreatorClick(save, pos);
+      CreatorUi.handleClick(save, pos);
       return true;
     }
 
@@ -718,19 +716,12 @@ const Screens = {
     }
 
     if (state === "settings") {
-      if (this._hit("remapBall", pos)) { this.waitingKey = "ball"; return true; }
-      if (this._hit("remapBomb", pos)) { this.waitingKey = "bomb"; return true; }
       if (this._hit("toggleMobile", pos)) {
         Input.touchMode = !Input.touchMode;
         applyViewport(App.canvas);
         App.stars = createStars();
         MobileShell.syncRotatePrompt();
         if (App.canvas) App.canvas.style.cursor = Input.touchMode ? "default" : "none";
-        return true;
-      }
-      if (this._hit("toggleAccessibility", pos)) {
-        save.settings.accessibility = !save.settings.accessibility;
-        writeSave(save);
         return true;
       }
       if (this._hit("account", pos)) {

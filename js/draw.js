@@ -117,24 +117,30 @@ function drawIconButton(ctx, rect, img, hovered) {
 }
 
 function drawBackground(ctx, now, bgTheme, stars, save) {
-  const bg = save ? resolveBackground(save) : bgTheme;
+  const level = App?.game?.level;
+  const mediaUrl = level?._bgMediaUrl;
+  const mediaImg = mediaUrl && BgMediaCache ? BgMediaCache.get(mediaUrl) : null;
 
-  ctx.fillStyle = rgb(bg.bg);
-  ctx.fillRect(0, 0, viewW(), viewH());
-
-  ctx.strokeStyle = rgb(bg.grid);
-  ctx.lineWidth = 1;
-  for (let x = 0; x < viewW(); x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, viewH());
-    ctx.stroke();
-  }
-  for (let y = 0; y < viewH(); y += 50) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(viewW(), y);
-    ctx.stroke();
+  if (mediaImg) {
+    ctx.drawImage(mediaImg, 0, 0, viewW(), viewH());
+  } else {
+    const bg = save ? resolveBackground(save) : bgTheme;
+    ctx.fillStyle = rgb(bg.bg);
+    ctx.fillRect(0, 0, viewW(), viewH());
+    ctx.strokeStyle = rgb(bg.grid);
+    ctx.lineWidth = 1;
+    for (let x = 0; x < viewW(); x += 50) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, viewH());
+      ctx.stroke();
+    }
+    for (let y = 0; y < viewH(); y += 50) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(viewW(), y);
+      ctx.stroke();
+    }
   }
 
   for (const star of stars || []) {

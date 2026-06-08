@@ -41,6 +41,15 @@ function resolveBackground(save) {
   };
 }
 
+const BgMediaCache = new Map();
+
+function preloadBgMedia(url) {
+  if (!url || BgMediaCache.has(url)) return;
+  const img = new Image();
+  img.onload = () => BgMediaCache.set(url, img);
+  img.src = url;
+}
+
 function drawBackgroundSwatch(ctx, x, y, w, h, item, save) {
   const preview = item.id === save.equippedBackground
     ? resolveBackground(save)
