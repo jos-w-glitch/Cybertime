@@ -25,7 +25,17 @@ const Screens = {
   },
 
   buttonStackGap() {
-    return Input.touchMode ? 20 : 12;
+    return Input.touchMode ? 28 : 12;
+  },
+
+  menuPanelPadY() {
+    return Input.touchMode ? 28 : 18;
+  },
+
+  infiniteCycleBlockStep() {
+    const btnH = btnHeight(Input.touchMode ? 52 : 44);
+    const header = Input.touchMode ? 68 : 72;
+    return header + btnH + this.buttonStackGap();
   },
 
   actionButtonWidth() {
@@ -72,9 +82,9 @@ const Screens = {
     };
     const panel = {
       x: x - 18,
-      y: slots.start.y - 18,
+      y: slots.start.y - this.menuPanelPadY(),
       w: fullW + 36,
-      h: slots.howto.y + slots.howto.h - slots.start.y + 36,
+      h: slots.howto.y + slots.howto.h - slots.start.y + this.menuPanelPadY() * 2,
     };
     return { slots, panel };
   },
@@ -90,7 +100,7 @@ const Screens = {
   },
 
   listRowHeight() {
-    return Input.touchMode ? 84 : 76;
+    return Input.touchMode ? 92 : 76;
   },
 
   listTop() {
@@ -163,7 +173,7 @@ const Screens = {
 
     const rect = this.btn(btnId, "NEXT", x, btnY, w, btnH);
     drawNeonButton(App.ctx, rect, "NEXT", pointInRect(mousePos, rect), true);
-    return btnY + btnH + (Input.touchMode ? 28 : 32);
+    return btnY + btnH + this.buttonStackGap();
   },
 
   screenPad() {
@@ -171,7 +181,7 @@ const Screens = {
   },
 
   shopRowHeight() {
-    return Input.touchMode ? 168 : 130;
+    return Input.touchMode ? 182 : 130;
   },
 
   shopListTop() {
@@ -309,10 +319,11 @@ const Screens = {
     App.ctx.fillText("Tap NEXT to cycle track and mechanics", blockX, Input.touchMode ? 102 : 115);
 
     const panelTop = Input.touchMode ? 128 : 158;
-    const panelH = Input.touchMode ? 230 : 210;
+    const panelPad = Input.touchMode ? 24 : 18;
+    const panelH = panelPad * 2 + this.infiniteCycleBlockStep() * 2;
     drawUiPanel(App.ctx, { x: blockX - 16, y: panelTop - 10, w: blockW + 32, h: panelH });
 
-    let y = panelTop + 8;
+    let y = panelTop + panelPad;
     y = this.drawInfiniteCycleBlock(
       "TRACK",
       `${level.id}. ${level.name}`,
@@ -428,7 +439,8 @@ const Screens = {
         : save.equippedBackground === item.id;
 
       App.ctx.fillStyle = "rgba(20,20,32,0.55)";
-      App.ctx.fillRect(pad, y, cardW, rowH - 12);
+      const cardGap = uiBtnGap(14);
+      App.ctx.fillRect(pad, y, cardW, rowH - cardGap);
 
       App.ctx.font = Input.touchMode ? uiFont(24) : gameFont(24);
       App.ctx.fillStyle = rgb(COLORS.text);
@@ -498,7 +510,9 @@ const Screens = {
     App.ctx.fillText(playerLine, btnX + 16, 268);
 
     let y = 300;
-    drawUiPanel(App.ctx, { x: btnX - 16, y: y - 16, w: btnW + 32, h: btnH + stackGap + btnH + 40 });
+    const panelPad = Input.touchMode ? 24 : 20;
+    const panelH = panelPad * 2 + btnH;
+    drawUiPanel(App.ctx, { x: btnX - 16, y: y - panelPad, w: btnW + 32, h: panelH });
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
     this.drawMenuSlot("account", accountLabel, { x: btnX, y, w: halfW, h: btnH }, mousePos);

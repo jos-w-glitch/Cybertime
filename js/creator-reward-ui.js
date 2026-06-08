@@ -76,8 +76,9 @@ const CreatorRewardUi = {
     drawBackground(App.ctx, now, getBackgroundById(save.equippedBackground), App.stars, save);
     const pad = Screens.screenPad();
     const rewards = CreatorStore.listRewards();
-    const rowH = 56;
-    Screens.listMaxScroll = Math.max(0, 120 + rewards.length * rowH - (viewH() - 120));
+    const rowH = Input.touchMode ? 64 : 56;
+    const rowGap = uiBtnGap(12);
+    Screens.listMaxScroll = Math.max(0, 120 + rewards.length * (rowH + rowGap) - (viewH() - 120));
 
     App.ctx.font = gameFont(40);
     App.ctx.fillStyle = rgb(COLORS.blue);
@@ -89,7 +90,7 @@ const CreatorRewardUi = {
     App.ctx.clip();
 
     rewards.forEach((r, i) => {
-      const y = 110 + i * rowH - Screens.scrollY;
+      const y = 110 + i * (rowH + rowGap) - Screens.scrollY;
       if (y + rowH < 100 || y > viewH() - 80) return;
       const btn = Screens.btn(`cgp-${r.id}`, r.name, pad, y, viewW() - pad * 2, uiBtnHeight(44));
       drawNeonButton(App.ctx, btn, r.name, pointInRect(mousePos, btn), true);
