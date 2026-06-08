@@ -2482,20 +2482,20 @@ const Screens = {
   },
 
   menuLayout() {
-    const count = 6;
-    const headerBottom = Input.touchMode ? 252 : 268;
-    const footer = Input.touchMode ? 40 : 28;
-    const gap = Input.touchMode ? 14 : 10;
-    const avail = viewH() - headerBottom - footer;
-    const btnH = Math.min(btnHeight(Input.touchMode ? 62 : 56), Math.floor((avail - gap * (count - 1)) / count));
-    const blockH = count * btnH + gap * (count - 1);
+    const btnH = btnHeight(52);
+    const gap = 65;
+    const top = Input.touchMode ? 300 : 340;
     return {
       pad: this.screenPad(),
       btnH,
-      top: headerBottom + Math.floor((avail - blockH) / 2),
+      top,
       gap,
-      titleSize: Input.touchMode ? 80 : 92,
+      titleSize: Input.touchMode ? 72 : 92,
     };
+  },
+
+  buttonStackGap() {
+    return Input.touchMode ? 20 : 12;
   },
 
   menuBtnY(index) {
@@ -2802,11 +2802,16 @@ const Screens = {
 
     const playW = Input.touchMode ? viewW() - pad * 2 : 260;
     const playX = Input.touchMode ? pad : null;
-    const play = this.btn("infPlay", "PLAY", playX, viewH() - (Input.touchMode ? 200 : 150), playW, btnHeight(Input.touchMode ? 60 : 56));
+    const playH = btnHeight(Input.touchMode ? 56 : 56);
+    const backH = btnHeight(52);
+    const stackGap = this.buttonStackGap();
+    const backY = viewH() - (Input.touchMode ? 100 : 70);
+    const playY = backY - stackGap - playH;
+    const play = this.btn("infPlay", "PLAY", playX, playY, playW, playH);
     drawNeonButton(App.ctx, play, "PLAY", pointInRect(mousePos, play));
     drawNeonButton(
       App.ctx,
-      this.btn("back", "BACK", playX, viewH() - (Input.touchMode ? 120 : 70), playW, btnHeight(52)),
+      this.btn("back", "BACK", playX, backY, playW, backH),
       "BACK",
       pointInRect(mousePos, this.buttons.back),
     );
@@ -2977,20 +2982,33 @@ const Screens = {
 
     const accountLabel = Auth.isLoggedIn() ? "LOGOUT" : "LOGIN";
     const accLabel = save.settings.accessibility ? "ACCESSIBILITY: ON" : "ACCESSIBILITY: OFF";
-    const settingsY = Input.touchMode ? 360 : 490;
-    drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - (Input.touchMode ? 0 : 70), Input.touchMode ? 420 : 580, btnHeight(44)), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
-    drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnHeight(44)), accountLabel, pointInRect(mousePos, this.buttons.account), true);
-    drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnHeight(44)), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
+    const stackGap = this.buttonStackGap();
+    const btnH = btnHeight(44);
 
-    if (Input.touchMode && !PwaInstall.isStandalone()) {
-      const installY = settingsY + 70;
-      const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
-      drawNeonButton(App.ctx, this.btn("installApp", installLabel, 80, installY, 420, btnHeight(48)), installLabel, pointInRect(mousePos, this.buttons.installApp), true);
-      if (PwaInstall.isIos() && !PwaInstall.canPromptInstall()) {
-        App.ctx.font = uiFont(15);
-        App.ctx.fillStyle = rgb(COLORS.gray);
-        App.ctx.fillText(PwaInstall.iosHint(), 80, installY + 72);
+    if (Input.touchMode) {
+      const pad = this.screenPad();
+      const btnW = viewW() - pad * 2;
+      let y = 340;
+      drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, pad, y, btnW, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
+      y += btnH + stackGap;
+      drawNeonButton(App.ctx, this.btn("account", accountLabel, pad, y, btnW, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
+      y += btnH + stackGap;
+      drawNeonButton(App.ctx, this.btn("toggleMobile", "MOBILE: ON", pad, y, btnW, btnH), "MOBILE: ON", pointInRect(mousePos, this.buttons.toggleMobile), true);
+      if (!PwaInstall.isStandalone()) {
+        y += btnH + stackGap;
+        const installLabel = PwaInstall.canPromptInstall() ? "INSTALL APP" : "ADD TO HOME";
+        drawNeonButton(App.ctx, this.btn("installApp", installLabel, pad, y, btnW, btnHeight(48)), installLabel, pointInRect(mousePos, this.buttons.installApp), true);
+        if (PwaInstall.isIos() && !PwaInstall.canPromptInstall()) {
+          App.ctx.font = uiFont(15);
+          App.ctx.fillStyle = rgb(COLORS.gray);
+          App.ctx.fillText(PwaInstall.iosHint(), pad, y + btnHeight(48) + 28);
+        }
       }
+    } else {
+      const settingsY = 490;
+      drawNeonButton(App.ctx, this.btn("toggleAccessibility", accLabel, 80, settingsY - 70, 580, btnH), accLabel, pointInRect(mousePos, this.buttons.toggleAccessibility), true);
+      drawNeonButton(App.ctx, this.btn("account", accountLabel, 80, settingsY, 180, btnH), accountLabel, pointInRect(mousePos, this.buttons.account), true);
+      drawNeonButton(App.ctx, this.btn("toggleMobile", Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", 280, settingsY, 220, btnH), Input.touchMode ? "MOBILE: ON" : "MOBILE: OFF", pointInRect(mousePos, this.buttons.toggleMobile), true);
     }
 
     drawNeonButton(App.ctx, this.btn("back", "BACK", null, viewH() - 70), "BACK", pointInRect(mousePos, this.buttons.back));
