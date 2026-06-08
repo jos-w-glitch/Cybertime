@@ -27,12 +27,92 @@ const GameLogic = {
     }
   },
 
-  handleClick(game, button, pos, now) {
-    if (!game.started) {
-      if (Input.resolveButton(button) !== "ball") return null;
-      if (game.startTarget.checkClick(pos) === "HIT") return "begin";
-      return null;
+  handleStartClick(game, button, pos, now) {
+    const start = game.startTarget;
+    if (!start) return null;
+
+    const action = Input.resolveButton(button);
+    const hit = start.checkClick(pos);
+    const partnerHit = start.checkPartnerClick(pos);
+    if (hit === "MISS" && partnerHit === "MISS") return null;
+
+    if (start.mechanic === "BALL") {
+      if (action !== "ball" || hit !== "HIT") return null;
+      return "begin";
     }
+
+    if (start.mechanic === "BOMB") {
+      if (Input.touchMode) {
+        if (action !== "ball") { start.mobileTapCount = 0; return null; }
+        start.mobileTapCount += 1;
+        if (start.mobileTapCount < 2) { AudioEngine.playDefuse(); return null; }
+        return "begin";
+      }
+      if (action !== "bomb" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "ORANGE") {
+      if (Input.touchMode) {
+        if (action !== "ball") { start.mobileTapCount = 0; start.defused = false; return null; }
+        start.mobileTapCount += 1;
+        if (start.mobileTapCount < 3) {
+          if (start.mobileTapCount === 2) start.defused = true;
+          AudioEngine.playDefuse();
+          return null;
+        }
+        return "begin";
+      }
+      if (!start.defused) {
+        if (action !== "bomb" || hit !== "HIT") return null;
+        start.defused = true;
+        AudioEngine.playDefuse();
+        return null;
+      }
+      if (action !== "ball" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "PURPLE") {
+      if (Input.touchMode) {
+        if (hit === "HIT" && !start.purpleTapMain) start.purpleTapMain = now;
+        if (partnerHit === "HIT" && !start.purpleTapPartner) start.purpleTapPartner = now;
+        if (!start.purpleTapMain || !start.purpleTapPartner) {
+          AudioEngine.playDefuse();
+          return null;
+        }
+        if (Math.abs(start.purpleTapMain - start.purpleTapPartner) > PURPLE_DUAL_WINDOW_MS) {
+          start.purpleTapMain = 0;
+          start.purpleTapPartner = 0;
+          return null;
+        }
+        return "begin";
+      }
+      if (action !== "purple" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "SLIDER" || start.mechanic === "SLIDER_BOMB") {
+      if (hit !== "HIT" || Math.abs(start.x - start.hitZoneX) > 32) return null;
+      if (start.mechanic === "SLIDER_BOMB") {
+        if (Input.touchMode) {
+          if (action !== "ball") { start.mobileTapCount = 0; return null; }
+          start.mobileTapCount += 1;
+          if (start.mobileTapCount < 2) { AudioEngine.playDefuse(); return null; }
+          return "begin";
+        }
+        if (action !== "bomb") return null;
+        return "begin";
+      }
+      if (action !== "ball") return null;
+      return "begin";
+    }
+
+    return null;
+  },
+
+  handleClick(game, button, pos, now) {
+    if (!game.started) return this.handleStartClick(game, button, pos, now);
 
     const action = Input.resolveButton(button);
     if (!action) return;

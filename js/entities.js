@@ -272,44 +272,151 @@ class Target {
   }
 }
 
-function createStartTarget() {
-  const baseRadius = Input.touchMode ? 44 : 34;
-  return {
-    x: viewW() / 2,
-    y: viewH() / 2,
-    radius: Math.round(baseRadius * accessibilityScale()),
+function startTargetColors(type) {
+  if (type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
+  if (type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
+  if (type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
+  return { main: COLORS.red, glow: COLORS.redGlow };
+}
+
+function drawStartOrb(ctx, x, y, radius, type, pulseAngle, opts = {}) {
+  const colors = startTargetColors(type);
+  let r = radius + Math.sin(pulseAngle) * 4;
+  if (opts.bombPulse) r += Math.floor(3 * Math.sin(pulseAngle * 1.2));
+
+  if (opts.defused) {
+    ctx.strokeStyle = rgb(COLORS.green);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = rgb(colors.glow);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 6, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = rgb(colors.main);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgb(COLORS.text);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 10, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function createStartTarget(level) {
+  const mechanic = levelStartMechanic(level);
+  const baseRadius = Math.round((Input.touchMode ? 44 : 34) * accessibilityScale());
+  const cx = viewW() / 2;
+  const cy = viewH() / 2;
+  const isSlider = mechanic === "SLIDER" || mechanic === "SLIDER_BOMB";
+  const ballType = mechanic === "ORANGE" ? "ORANGE" : mechanic === "PURPLE" ? "PURPLE" : mechanic === "SLIDER_BOMB" ? "BOMB" : mechanic === "BOMB" ? "BOMB" : "BALL";
+
+  const target = {
+    mechanic,
+    ballType,
+    defused: false,
+    mobileTapCount: 0,
+    purpleTapMain: 0,
+    purpleTapPartner: 0,
     pulseAngle: 0,
-    update() {
-      this.pulseAngle += 0.1;
-    },
-    checkClick(pos) {
-      const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-      if (dist <= this.radius + hitPadSize()) return "HIT";
-      return "MISS";
-    },
-    draw(ctx) {
-      const radius = this.radius + Math.sin(this.pulseAngle) * 5;
-      ctx.strokeStyle = rgb(COLORS.blueGlow);
+    radius: baseRadius,
+    x: cx,
+    y: cy,
+    hitZoneX: cx,
+    velX: 5 + level.id * 0.05,
+    isSlider,
+    partner: null,
+  };
+
+  if (mechanic === "PURPLE" && Input.touchMode) {
+    target.x = cx - 110;
+    target.partner = { x: cx + 110, y: cy, radius: baseRadius, tapped: false };
+  }
+  if (isSlider) {
+    target.x = -40;
+    target.y = cy;
+  }
+
+  target.update = function () {
+    this.pulseAngle += 0.1;
+    if (!this.isSlider) return;
+    this.x += this.velX;
+    if (this.x > viewW() + 40) this.x = -40;
+  };
+
+  target.checkClick = function (pos) {
+    const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
+    if (dist <= this.radius + hitPadSize()) return "HIT";
+    return "MISS";
+  };
+
+  target.checkPartnerClick = function (pos) {
+    if (!this.partner) return "MISS";
+    const dist = Math.hypot(this.partner.x - pos.x, this.partner.y - pos.y);
+    if (dist <= this.partner.radius + hitPadSize()) return "HIT";
+    return "MISS";
+  };
+
+  target.startHint = function () {
+    if (this.mechanic === "BOMB") return Input.touchMode ? "TAP TWICE TO START" : "RIGHT CLICK TO START";
+    if (this.mechanic === "ORANGE") {
+      if (Input.touchMode) return this.mobileTapCount >= 2 ? "TAP AGAIN TO START" : "TAP THREE TIMES TO START";
+      return this.defused ? "LEFT CLICK TO START" : "RIGHT CLICK TO START";
+    }
+    if (this.mechanic === "PURPLE") return Input.touchMode ? "TAP BOTH TO START" : "MIDDLE CLICK TO START";
+    if (this.mechanic === "SLIDER") return Input.touchMode ? "TAP AT GOLD LINE" : "CLICK AT GOLD LINE";
+    if (this.mechanic === "SLIDER_BOMB") return Input.touchMode ? "DOUBLE TAP AT LINE" : "RIGHT CLICK AT LINE";
+    return Input.touchMode ? "TAP TO START" : "CLICK TO START";
+  };
+
+  target.draw = function (ctx) {
+    if (this.isSlider) {
+      ctx.strokeStyle = rgb(COLORS.gold, 0.5);
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, radius + 6, 0, Math.PI * 2);
+      ctx.moveTo(this.hitZoneX, this.y - 40);
+      ctx.lineTo(this.hitZoneX, this.y + 40);
       ctx.stroke();
-      ctx.fillStyle = rgb(COLORS.blue);
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = rgb(COLORS.text);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, radius + 10, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.font = gameFont(24);
+    }
+
+    drawStartOrb(ctx, this.x, this.y, this.radius, this.ballType, this.pulseAngle, {
+      bombPulse: this.ballType === "BOMB" && !this.defused,
+      defused: this.defused,
+    });
+
+    if (this.partner) {
+      drawStartOrb(ctx, this.partner.x, this.partner.y, this.partner.radius, "PURPLE", this.pulseAngle + 0.4);
+    }
+
+    if (Input.touchMode && this.ballType === "BOMB" && !this.defused && this.mobileTapCount > 0) {
+      ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
       ctx.textAlign = "center";
-      ctx.fillText("CLICK TO START", this.x, this.y - radius - 22);
+      ctx.fillText(`${this.mobileTapCount}/2`, this.x, this.y - this.radius - 14);
       ctx.textAlign = "left";
-    },
+    }
+    if (Input.touchMode && this.mechanic === "ORANGE" && this.mobileTapCount > 0) {
+      ctx.font = gameFont(20);
+      ctx.fillStyle = rgb(COLORS.text);
+      ctx.textAlign = "center";
+      ctx.fillText(`${this.mobileTapCount}/3`, this.x, this.y - this.radius - 14);
+      ctx.textAlign = "left";
+    }
+
+    const hintY = this.partner ? this.y - this.radius - 36 : this.y - this.radius - 22;
+    ctx.font = gameFont(Input.touchMode ? 18 : 22);
+    ctx.fillStyle = rgb(COLORS.text);
+    ctx.textAlign = "center";
+    ctx.fillText(this.startHint(), cx, hintY);
+    ctx.textAlign = "left";
   };
+
+  return target;
 }
 
 function createGame(level, now) {
@@ -317,7 +424,7 @@ function createGame(level, now) {
     level,
     infinite: !!level.infinite,
     started: false,
-    startTarget: createStartTarget(),
+    startTarget: createStartTarget(level),
     currentTarget: new Target(level, false),
     nextTarget: new Target(level, shouldSpawnSlider(level)),
     floatingTexts: [],

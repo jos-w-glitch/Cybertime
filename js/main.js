@@ -143,8 +143,9 @@ const App = {
     canvas.addEventListener("pointerdown", (e) => {
       if (!this.sessionReady) return;
       const inGame = this.state === "game" && this.game?.running;
+      const waitingStart = inGame && !this.game.started;
       if (!inGame && e.button !== 0) return;
-      if (inGame && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+      if (inGame && !waitingStart && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);

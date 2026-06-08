@@ -74,9 +74,9 @@ const INFINITE_MECHANIC_PRESETS = [
   { name: "BLUE ONLY", red: false, orange: false, purple: false, sliders: false, sliderRed: false },
   { name: "RED BOMBS", red: true, orange: false, purple: false, sliders: false, sliderRed: false },
   { name: "ORANGE BOMBS", red: true, orange: true, purple: false, sliders: false, sliderRed: false },
-  { name: "PURPLE DUAL", red: false, orange: false, purple: true, sliders: false, sliderRed: false },
-  { name: "SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: false },
-  { name: "RED SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: true },
+  { name: "PURPLE DUAL", red: true, orange: true, purple: true, sliders: false, sliderRed: false },
+  { name: "SLIDERS", red: true, orange: true, purple: true, sliders: true, sliderRed: false },
+  { name: "RED SLIDERS", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
   { name: "FULL MIX", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
 ];
 const ICON_BUTTON_SIZE = 56;
@@ -385,6 +385,33 @@ function getTutorial(key) {
   if (!tutorial) return null;
   const lines = Input.touchMode && tutorial.mobileLines ? tutorial.mobileLines : tutorial.lines;
   return { title: tutorial.title, lines };
+}
+
+function levelStartMechanic(level) {
+  const fromTutorial = {
+    red: "BOMB",
+    orange: "ORANGE",
+    purple: "PURPLE",
+    sliders: "SLIDER",
+    redSliders: "SLIDER_BOMB",
+  };
+  if (level.tutorial && fromTutorial[level.tutorial]) return fromTutorial[level.tutorial];
+
+  if (level.infinite) {
+    if (level.sliderRed) return "SLIDER_BOMB";
+    if (level.sliders) return "SLIDER";
+    if (level.allowPurple) return "PURPLE";
+    if (level.allowOrange) return "ORANGE";
+    if (level.allowRed) return "BOMB";
+    return "BALL";
+  }
+
+  if (level.sliderRed) return "SLIDER_BOMB";
+  if (level.sliders && !level.allowRed && !level.allowOrange && !level.allowPurple) return "SLIDER";
+  if (level.allowPurple && !level.allowRed && !level.allowOrange) return "PURPLE";
+  if (level.allowOrange) return "ORANGE";
+  if (level.allowRed) return "BOMB";
+  return "BALL";
 }
 // Supabase → Project Settings → Data API → Project URL (not /rest/v1/)
 const SUPABASE_URL = "https://lhbwdnzbopiwxnygippz.supabase.co";
@@ -1740,44 +1767,151 @@ class Target {
   }
 }
 
-function createStartTarget() {
-  const baseRadius = Input.touchMode ? 44 : 34;
-  return {
-    x: viewW() / 2,
-    y: viewH() / 2,
-    radius: Math.round(baseRadius * accessibilityScale()),
+function startTargetColors(type) {
+  if (type === "PURPLE") return { main: COLORS.purple, glow: COLORS.purpleGlow };
+  if (type === "BALL") return { main: COLORS.blue, glow: COLORS.blueGlow };
+  if (type === "ORANGE") return { main: COLORS.orange, glow: COLORS.orangeGlow };
+  return { main: COLORS.red, glow: COLORS.redGlow };
+}
+
+function drawStartOrb(ctx, x, y, radius, type, pulseAngle, opts = {}) {
+  const colors = startTargetColors(type);
+  let r = radius + Math.sin(pulseAngle) * 4;
+  if (opts.bombPulse) r += Math.floor(3 * Math.sin(pulseAngle * 1.2));
+
+  if (opts.defused) {
+    ctx.strokeStyle = rgb(COLORS.green);
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.arc(x, y, r + 8, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  ctx.strokeStyle = rgb(colors.glow);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 6, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = rgb(colors.main);
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = rgb(COLORS.text);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 10, 0, Math.PI * 2);
+  ctx.stroke();
+}
+
+function createStartTarget(level) {
+  const mechanic = levelStartMechanic(level);
+  const baseRadius = Math.round((Input.touchMode ? 44 : 34) * accessibilityScale());
+  const cx = viewW() / 2;
+  const cy = viewH() / 2;
+  const isSlider = mechanic === "SLIDER" || mechanic === "SLIDER_BOMB";
+  const ballType = mechanic === "ORANGE" ? "ORANGE" : mechanic === "PURPLE" ? "PURPLE" : mechanic === "SLIDER_BOMB" ? "BOMB" : mechanic === "BOMB" ? "BOMB" : "BALL";
+
+  const target = {
+    mechanic,
+    ballType,
+    defused: false,
+    mobileTapCount: 0,
+    purpleTapMain: 0,
+    purpleTapPartner: 0,
     pulseAngle: 0,
-    update() {
-      this.pulseAngle += 0.1;
-    },
-    checkClick(pos) {
-      const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
-      if (dist <= this.radius + hitPadSize()) return "HIT";
-      return "MISS";
-    },
-    draw(ctx) {
-      const radius = this.radius + Math.sin(this.pulseAngle) * 5;
-      ctx.strokeStyle = rgb(COLORS.blueGlow);
+    radius: baseRadius,
+    x: cx,
+    y: cy,
+    hitZoneX: cx,
+    velX: 5 + level.id * 0.05,
+    isSlider,
+    partner: null,
+  };
+
+  if (mechanic === "PURPLE" && Input.touchMode) {
+    target.x = cx - 110;
+    target.partner = { x: cx + 110, y: cy, radius: baseRadius, tapped: false };
+  }
+  if (isSlider) {
+    target.x = -40;
+    target.y = cy;
+  }
+
+  target.update = function () {
+    this.pulseAngle += 0.1;
+    if (!this.isSlider) return;
+    this.x += this.velX;
+    if (this.x > viewW() + 40) this.x = -40;
+  };
+
+  target.checkClick = function (pos) {
+    const dist = Math.hypot(this.x - pos.x, this.y - pos.y);
+    if (dist <= this.radius + hitPadSize()) return "HIT";
+    return "MISS";
+  };
+
+  target.checkPartnerClick = function (pos) {
+    if (!this.partner) return "MISS";
+    const dist = Math.hypot(this.partner.x - pos.x, this.partner.y - pos.y);
+    if (dist <= this.partner.radius + hitPadSize()) return "HIT";
+    return "MISS";
+  };
+
+  target.startHint = function () {
+    if (this.mechanic === "BOMB") return Input.touchMode ? "TAP TWICE TO START" : "RIGHT CLICK TO START";
+    if (this.mechanic === "ORANGE") {
+      if (Input.touchMode) return this.mobileTapCount >= 2 ? "TAP AGAIN TO START" : "TAP THREE TIMES TO START";
+      return this.defused ? "LEFT CLICK TO START" : "RIGHT CLICK TO START";
+    }
+    if (this.mechanic === "PURPLE") return Input.touchMode ? "TAP BOTH TO START" : "MIDDLE CLICK TO START";
+    if (this.mechanic === "SLIDER") return Input.touchMode ? "TAP AT GOLD LINE" : "CLICK AT GOLD LINE";
+    if (this.mechanic === "SLIDER_BOMB") return Input.touchMode ? "DOUBLE TAP AT LINE" : "RIGHT CLICK AT LINE";
+    return Input.touchMode ? "TAP TO START" : "CLICK TO START";
+  };
+
+  target.draw = function (ctx) {
+    if (this.isSlider) {
+      ctx.strokeStyle = rgb(COLORS.gold, 0.5);
       ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(this.x, this.y, radius + 6, 0, Math.PI * 2);
+      ctx.moveTo(this.hitZoneX, this.y - 40);
+      ctx.lineTo(this.hitZoneX, this.y + 40);
       ctx.stroke();
-      ctx.fillStyle = rgb(COLORS.blue);
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, radius, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.strokeStyle = rgb(COLORS.text);
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(this.x, this.y, radius + 10, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.font = gameFont(24);
+    }
+
+    drawStartOrb(ctx, this.x, this.y, this.radius, this.ballType, this.pulseAngle, {
+      bombPulse: this.ballType === "BOMB" && !this.defused,
+      defused: this.defused,
+    });
+
+    if (this.partner) {
+      drawStartOrb(ctx, this.partner.x, this.partner.y, this.partner.radius, "PURPLE", this.pulseAngle + 0.4);
+    }
+
+    if (Input.touchMode && this.ballType === "BOMB" && !this.defused && this.mobileTapCount > 0) {
+      ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
       ctx.textAlign = "center";
-      ctx.fillText("CLICK TO START", this.x, this.y - radius - 22);
+      ctx.fillText(`${this.mobileTapCount}/2`, this.x, this.y - this.radius - 14);
       ctx.textAlign = "left";
-    },
+    }
+    if (Input.touchMode && this.mechanic === "ORANGE" && this.mobileTapCount > 0) {
+      ctx.font = gameFont(20);
+      ctx.fillStyle = rgb(COLORS.text);
+      ctx.textAlign = "center";
+      ctx.fillText(`${this.mobileTapCount}/3`, this.x, this.y - this.radius - 14);
+      ctx.textAlign = "left";
+    }
+
+    const hintY = this.partner ? this.y - this.radius - 36 : this.y - this.radius - 22;
+    ctx.font = gameFont(Input.touchMode ? 18 : 22);
+    ctx.fillStyle = rgb(COLORS.text);
+    ctx.textAlign = "center";
+    ctx.fillText(this.startHint(), cx, hintY);
+    ctx.textAlign = "left";
   };
+
+  return target;
 }
 
 function createGame(level, now) {
@@ -1785,7 +1919,7 @@ function createGame(level, now) {
     level,
     infinite: !!level.infinite,
     started: false,
-    startTarget: createStartTarget(),
+    startTarget: createStartTarget(level),
     currentTarget: new Target(level, false),
     nextTarget: new Target(level, shouldSpawnSlider(level)),
     floatingTexts: [],
@@ -2055,12 +2189,92 @@ const GameLogic = {
     }
   },
 
-  handleClick(game, button, pos, now) {
-    if (!game.started) {
-      if (Input.resolveButton(button) !== "ball") return null;
-      if (game.startTarget.checkClick(pos) === "HIT") return "begin";
-      return null;
+  handleStartClick(game, button, pos, now) {
+    const start = game.startTarget;
+    if (!start) return null;
+
+    const action = Input.resolveButton(button);
+    const hit = start.checkClick(pos);
+    const partnerHit = start.checkPartnerClick(pos);
+    if (hit === "MISS" && partnerHit === "MISS") return null;
+
+    if (start.mechanic === "BALL") {
+      if (action !== "ball" || hit !== "HIT") return null;
+      return "begin";
     }
+
+    if (start.mechanic === "BOMB") {
+      if (Input.touchMode) {
+        if (action !== "ball") { start.mobileTapCount = 0; return null; }
+        start.mobileTapCount += 1;
+        if (start.mobileTapCount < 2) { AudioEngine.playDefuse(); return null; }
+        return "begin";
+      }
+      if (action !== "bomb" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "ORANGE") {
+      if (Input.touchMode) {
+        if (action !== "ball") { start.mobileTapCount = 0; start.defused = false; return null; }
+        start.mobileTapCount += 1;
+        if (start.mobileTapCount < 3) {
+          if (start.mobileTapCount === 2) start.defused = true;
+          AudioEngine.playDefuse();
+          return null;
+        }
+        return "begin";
+      }
+      if (!start.defused) {
+        if (action !== "bomb" || hit !== "HIT") return null;
+        start.defused = true;
+        AudioEngine.playDefuse();
+        return null;
+      }
+      if (action !== "ball" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "PURPLE") {
+      if (Input.touchMode) {
+        if (hit === "HIT" && !start.purpleTapMain) start.purpleTapMain = now;
+        if (partnerHit === "HIT" && !start.purpleTapPartner) start.purpleTapPartner = now;
+        if (!start.purpleTapMain || !start.purpleTapPartner) {
+          AudioEngine.playDefuse();
+          return null;
+        }
+        if (Math.abs(start.purpleTapMain - start.purpleTapPartner) > PURPLE_DUAL_WINDOW_MS) {
+          start.purpleTapMain = 0;
+          start.purpleTapPartner = 0;
+          return null;
+        }
+        return "begin";
+      }
+      if (action !== "purple" || hit !== "HIT") return null;
+      return "begin";
+    }
+
+    if (start.mechanic === "SLIDER" || start.mechanic === "SLIDER_BOMB") {
+      if (hit !== "HIT" || Math.abs(start.x - start.hitZoneX) > 32) return null;
+      if (start.mechanic === "SLIDER_BOMB") {
+        if (Input.touchMode) {
+          if (action !== "ball") { start.mobileTapCount = 0; return null; }
+          start.mobileTapCount += 1;
+          if (start.mobileTapCount < 2) { AudioEngine.playDefuse(); return null; }
+          return "begin";
+        }
+        if (action !== "bomb") return null;
+        return "begin";
+      }
+      if (action !== "ball") return null;
+      return "begin";
+    }
+
+    return null;
+  },
+
+  handleClick(game, button, pos, now) {
+    if (!game.started) return this.handleStartClick(game, button, pos, now);
 
     const action = Input.resolveButton(button);
     if (!action) return;
@@ -3402,8 +3616,9 @@ const App = {
     canvas.addEventListener("pointerdown", (e) => {
       if (!this.sessionReady) return;
       const inGame = this.state === "game" && this.game?.running;
+      const waitingStart = inGame && !this.game.started;
       if (!inGame && e.button !== 0) return;
-      if (inGame && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
+      if (inGame && !waitingStart && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);

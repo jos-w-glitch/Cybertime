@@ -74,9 +74,9 @@ const INFINITE_MECHANIC_PRESETS = [
   { name: "BLUE ONLY", red: false, orange: false, purple: false, sliders: false, sliderRed: false },
   { name: "RED BOMBS", red: true, orange: false, purple: false, sliders: false, sliderRed: false },
   { name: "ORANGE BOMBS", red: true, orange: true, purple: false, sliders: false, sliderRed: false },
-  { name: "PURPLE DUAL", red: false, orange: false, purple: true, sliders: false, sliderRed: false },
-  { name: "SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: false },
-  { name: "RED SLIDERS", red: false, orange: false, purple: false, sliders: true, sliderRed: true },
+  { name: "PURPLE DUAL", red: true, orange: true, purple: true, sliders: false, sliderRed: false },
+  { name: "SLIDERS", red: true, orange: true, purple: true, sliders: true, sliderRed: false },
+  { name: "RED SLIDERS", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
   { name: "FULL MIX", red: true, orange: true, purple: true, sliders: true, sliderRed: true },
 ];
 const ICON_BUTTON_SIZE = 56;
@@ -385,4 +385,31 @@ function getTutorial(key) {
   if (!tutorial) return null;
   const lines = Input.touchMode && tutorial.mobileLines ? tutorial.mobileLines : tutorial.lines;
   return { title: tutorial.title, lines };
+}
+
+function levelStartMechanic(level) {
+  const fromTutorial = {
+    red: "BOMB",
+    orange: "ORANGE",
+    purple: "PURPLE",
+    sliders: "SLIDER",
+    redSliders: "SLIDER_BOMB",
+  };
+  if (level.tutorial && fromTutorial[level.tutorial]) return fromTutorial[level.tutorial];
+
+  if (level.infinite) {
+    if (level.sliderRed) return "SLIDER_BOMB";
+    if (level.sliders) return "SLIDER";
+    if (level.allowPurple) return "PURPLE";
+    if (level.allowOrange) return "ORANGE";
+    if (level.allowRed) return "BOMB";
+    return "BALL";
+  }
+
+  if (level.sliderRed) return "SLIDER_BOMB";
+  if (level.sliders && !level.allowRed && !level.allowOrange && !level.allowPurple) return "SLIDER";
+  if (level.allowPurple && !level.allowRed && !level.allowOrange) return "PURPLE";
+  if (level.allowOrange) return "ORANGE";
+  if (level.allowRed) return "BOMB";
+  return "BALL";
 }
