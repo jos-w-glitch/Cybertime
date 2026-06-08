@@ -2135,7 +2135,6 @@ const GameLogic = {
       return;
     }
 
-    const partner = game.purplePartner;
     this._resetPurplePair(game);
     game.combo += 1;
     game.comboPeak = Math.max(game.comboPeak, game.combo);
