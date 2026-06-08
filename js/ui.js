@@ -8,6 +8,8 @@ const Screens = {
   scrollY: 0,
   listMaxScroll: 0,
   draggingSlider: false,
+  draggingBgSlider: false,
+  bgSliders: null,
   scrollDrag: null,
   infiniteSetup: { trackId: 1, mechanicIndex: 2, red: true, orange: true, sliders: false, sliderRed: false },
   shareFeedback: "",
@@ -59,8 +61,9 @@ const Screens = {
   },
 
   scrollableState(state) {
+    if (state === "shop") return true;
     if (!Input.touchMode) return false;
-    return state === "levels" || state === "shop";
+    return state === "levels";
   },
 
   beginScrollDrag(y) {
@@ -125,8 +128,17 @@ const Screens = {
     return Input.touchMode ? 188 : 190;
   },
 
-  updateShopScroll(count) {
-    const content = this.shopListTop() + count * this.shopRowHeight();
+  shopColorPanelHeight() {
+    return this.shopTab === "backgrounds" ? 200 : 0;
+  },
+
+  shopItemCount() {
+    if (this.shopTab === "skins") return MOUSE_SKINS.length;
+    return BACKGROUNDS.length + 1;
+  },
+
+  updateShopScroll() {
+    const content = this.shopListTop() + this.shopItemCount() * this.shopRowHeight() + this.shopColorPanelHeight();
     this.listMaxScroll = Math.max(0, content - (viewH() - 120));
     this.scrollY = Math.min(this.scrollY, this.listMaxScroll);
   },
@@ -352,95 +364,61 @@ const Screens = {
     this.finishButtons();
   },
 
+  drawBgColorPanel(save, mousePos, y, pad, cardW) {
+    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+    App.ctx.fillRect(pad, y, cardW, 188);
+    App.ctx.font = uiFont(Input.touchMode ? 22 : 24);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText("FREE COLOR TUNE", pad + 16, y + 32);
+
+    const sliderW = cardW - 32;
+    const labels = { bg: "BACKGROUND", grid: "GRID", accent: "GLOW" };
+    this.bgSliders = {};
+    let sy = y + 48;
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = { x: pad + 16, y: sy + 20, w: sliderW - 32, label: labels[key] };
+      this.bgSliders[key] = slider;
+      drawSlider(App.ctx, slider, save.bgTuning?.[key] ?? 1);
+      sy += 56;
+    }
+  },
+
   drawShop(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = this.screenPad();
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
+    const tabH = btnHeight(Input.touchMode ? 48 : 40);
 
-    if (Input.touchMode) {
-      App.ctx.font = uiFont(40);
-      App.ctx.fillStyle = rgb(COLORS.blue);
-      App.ctx.fillText("SHOP", pad, 72);
-      drawCoins(App.ctx, save, viewW() - 210, 72);
-
-      const tabW = (viewW() - pad * 2 - 12) / 2;
-      const tabH = btnHeight(48);
-      drawNeonButton(App.ctx, this.btn("tabSkins", "SKINS", pad, 108, tabW, tabH), "SKINS", this.shopTab === "skins", true);
-      drawNeonButton(App.ctx, this.btn("tabBgs", "BGS", pad + tabW + 12, 108, tabW, tabH), "BGS", this.shopTab === "backgrounds", true);
-
-      this.updateShopScroll(items.length);
-      const rowH = this.shopRowHeight();
-      const listTop = this.shopListTop();
-      const cardW = viewW() - pad * 2;
-      const actionH = btnHeight(48);
-
-      App.ctx.save();
-      App.ctx.beginPath();
-      App.ctx.rect(0, listTop - 8, viewW(), viewH() - listTop - 100);
-      App.ctx.clip();
-
-      items.forEach((item, i) => {
-        const y = listTop + i * rowH - this.scrollY;
-        if (y + rowH < listTop || y > viewH() - 80) return;
-
-        const owned = this.shopTab === "skins"
-          ? save.ownedSkins.includes(item.id)
-          : save.ownedBackgrounds.includes(item.id);
-        const equipped = this.shopTab === "skins"
-          ? save.equippedSkin === item.id
-          : save.equippedBackground === item.id;
-
-        App.ctx.fillStyle = "rgba(20,20,32,0.55)";
-        App.ctx.fillRect(pad, y, cardW, rowH - 12);
-
-        App.ctx.font = uiFont(24);
-        App.ctx.fillStyle = rgb(COLORS.text);
-        App.ctx.fillText(item.name, pad + 16, y + 34);
-        App.ctx.font = uiFont(17);
-        App.ctx.fillStyle = rgb(owned ? COLORS.green : COLORS.gold);
-        App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, pad + 16, y + 62);
-
-        if (this.shopTab === "skins") {
-          drawCursor(App.ctx, { x: pad + cardW - 72, y: y + 28 }, item);
-        } else {
-          BackgroundEngine.drawThumb(App.ctx, pad + cardW - 88, y + 18, 64, 36, item, save);
-        }
-
-        const actionY = y + rowH - actionH - 20;
-        if (this.shopTab === "backgrounds" && item.custom && owned) {
-          const halfW = (cardW - 36) / 2;
-          drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", pad + 12, actionY, halfW, actionH), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
-          if (!equipped) {
-            drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 24 + halfW, actionY, halfW, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-          }
-        } else if (owned && !equipped) {
-          drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 12, actionY, cardW - 24, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-        } else if (!owned) {
-          drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", pad + 12, actionY, cardW - 24, actionH), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
-        }
-      });
-
-      App.ctx.restore();
-      drawNeonButton(App.ctx, this.btn("back", "BACK", pad, viewH() - 90, cardW, btnHeight(52)), "BACK", pointInRect(mousePos, this.buttons.back));
-      this.finishButtons();
-      return;
-    }
-
-    App.ctx.font = gameFont(48);
+    App.ctx.font = Input.touchMode ? uiFont(40) : gameFont(48);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SHOP", 80, 90);
-    drawCoins(App.ctx, save, viewW() - 220, 90);
+    App.ctx.fillText("SHOP", pad, Input.touchMode ? 72 : 90);
+    drawCoins(App.ctx, save, viewW() - (Input.touchMode ? 210 : 220), Input.touchMode ? 72 : 90);
 
-    drawNeonButton(App.ctx, this.btn("tabSkins", "MOUSE SKINS", 80, 120, 200, 40), "MOUSE SKINS", this.shopTab === "skins", true);
-    drawNeonButton(App.ctx, this.btn("tabBgs", "BACKGROUNDS", 300, 120, 200, 40), "BACKGROUNDS", this.shopTab === "backgrounds", true);
+    const tabW = Input.touchMode ? (viewW() - pad * 2 - 12) / 2 : 200;
+    const tabY = Input.touchMode ? 108 : 120;
+    const tabSkinsX = pad;
+    const tabBgsX = Input.touchMode ? pad + tabW + 12 : 300;
+    drawNeonButton(App.ctx, this.btn("tabSkins", Input.touchMode ? "SKINS" : "MOUSE SKINS", tabSkinsX, tabY, tabW, tabH), Input.touchMode ? "SKINS" : "MOUSE SKINS", this.shopTab === "skins", true);
+    drawNeonButton(App.ctx, this.btn("tabBgs", Input.touchMode ? "BGS" : "BACKGROUNDS", tabBgsX, tabY, tabW, tabH), Input.touchMode ? "BGS" : "BACKGROUNDS", this.shopTab === "backgrounds", true);
+
+    this.updateShopScroll();
+    const rowH = this.shopRowHeight();
+    const listTop = this.shopListTop();
+    const cardW = viewW() - pad * 2;
+    const actionH = btnHeight(Input.touchMode ? 48 : 36);
+    const listBottom = viewH() - (Input.touchMode ? 100 : 90);
+
+    App.ctx.save();
+    App.ctx.beginPath();
+    App.ctx.rect(0, listTop - 8, viewW(), listBottom - listTop + 8);
+    App.ctx.clip();
 
     items.forEach((item, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = 80 + col * 580;
-      const y = 190 + row * 130;
+      const y = listTop + i * rowH - this.scrollY;
+      if (y + rowH < listTop || y > listBottom) return;
+
       const owned = this.shopTab === "skins"
         ? save.ownedSkins.includes(item.id)
         : save.ownedBackgrounds.includes(item.id);
@@ -448,32 +426,42 @@ const Screens = {
         ? save.equippedSkin === item.id
         : save.equippedBackground === item.id;
 
-      App.ctx.font = gameFont(24);
+      App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+      App.ctx.fillRect(pad, y, cardW, rowH - 12);
+
+      App.ctx.font = Input.touchMode ? uiFont(24) : gameFont(24);
       App.ctx.fillStyle = rgb(COLORS.text);
-      App.ctx.fillText(item.name, x, y);
-      App.ctx.font = gameFont(18);
+      App.ctx.fillText(item.name, pad + 16, y + 34);
+      App.ctx.font = Input.touchMode ? uiFont(17) : gameFont(18);
       App.ctx.fillStyle = rgb(owned ? COLORS.green : COLORS.gold);
-      App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, x, y + 28);
+      App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, pad + 16, y + 62);
 
       if (this.shopTab === "skins") {
-        drawCursor(App.ctx, { x: x + 400, y: y - 10 }, item);
+        drawCursor(App.ctx, { x: pad + cardW - 72, y: y + 28 }, item);
       } else {
-        BackgroundEngine.drawThumb(App.ctx, x + 360, y - 24, 80, 40, item, save);
+        drawBackgroundSwatch(App.ctx, pad + cardW - 88, y + 18, 64, 36, item, save);
       }
 
-      if (this.shopTab === "backgrounds" && item.custom && owned) {
-        drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", x + 180, y + 36, 110, 36), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
-        if (!equipped) {
-          drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 300, y + 36, 110, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-        }
-      } else if (owned && !equipped) {
-        drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 320, y + 36, 120, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
+      const actionY = y + rowH - actionH - 20;
+      if (owned && !equipped) {
+        drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 12, actionY, cardW - 24, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
       } else if (!owned) {
-        drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", x + 320, y + 36, 120, 36), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
+        drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", pad + 12, actionY, cardW - 24, actionH), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
       }
     });
 
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, 620), "BACK", pointInRect(mousePos, this.buttons.back));
+    if (this.shopTab === "backgrounds") {
+      const panelY = listTop + items.length * rowH - this.scrollY;
+      if (panelY + 188 >= listTop && panelY <= listBottom) {
+        this.drawBgColorPanel(save, mousePos, panelY, pad, cardW);
+      }
+    }
+
+    App.ctx.restore();
+
+    const backY = viewH() - (Input.touchMode ? 90 : 70);
+    const backW = Input.touchMode ? cardW : null;
+    drawNeonButton(App.ctx, this.btn("back", "BACK", Input.touchMode ? pad : null, backY, backW, btnHeight(Input.touchMode ? 52 : 44)), "BACK", pointInRect(mousePos, this.buttons.back));
     this.finishButtons();
   },
 
@@ -712,9 +700,13 @@ const Screens = {
     }
 
     if (state === "shop") {
-      if (this._hit("tabSkins", pos)) { this.shopTab = "skins"; this.resetScroll(); return true; }
-      if (this._hit("tabBgs", pos)) { this.shopTab = "backgrounds"; this.resetScroll(); return true; }
+      if (this._hit("tabSkins", pos)) { this.shopTab = "skins"; this.resetScroll(); this.bgSliders = null; return true; }
+      if (this._hit("tabBgs", pos)) { this.shopTab = "backgrounds"; this.resetScroll(); this.bgSliders = null; return true; }
       if (this._hit("back", pos)) { App.state = "menu"; return true; }
+      if (this.shopTab === "backgrounds") {
+        this._handleShopBgSliderDrag(save, pos);
+        if (this.draggingBgSlider) return true;
+      }
       return this._handleShopPurchase(save, pos);
     }
 
@@ -782,17 +774,9 @@ const Screens = {
     return rect && pointInRect(pos, rect);
   },
 
-  pickCustomBackground() {
-    document.getElementById("custom-bg-input")?.click();
-  },
-
   _handleShopPurchase(save, pos) {
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
     for (const item of items) {
-      if (this._hit(`upload-${item.id}`, pos)) {
-        if (item.custom) this.pickCustomBackground();
-        return true;
-      }
       if (this._hit(`buy-${item.id}`, pos)) {
         const col = this.shopTab === "skins" ? "ownedSkins" : "ownedBackgrounds";
         const result = purchaseItem(save, item.price, col, item.id);
@@ -800,7 +784,7 @@ const Screens = {
           if (this.shopTab === "skins") save.equippedSkin = item.id;
           else {
             save.equippedBackground = item.id;
-            if (item.custom) this.pickCustomBackground();
+            save.bgTuning = defaultBgTuning();
           }
           writeSave(save);
         }
@@ -810,13 +794,29 @@ const Screens = {
         if (this.shopTab === "skins") save.equippedSkin = item.id;
         else {
           save.equippedBackground = item.id;
-          BackgroundEngine.preload(getBackgroundById(item.id));
+          save.bgTuning = defaultBgTuning();
         }
         writeSave(save);
         return true;
       }
     }
     return false;
+  },
+
+  _handleShopBgSliderDrag(save, pos) {
+    if (!this.bgSliders) return;
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = this.bgSliders[key];
+      if (!slider) continue;
+      const track = { x: slider.x, y: slider.y - 10, w: slider.w, h: 28 };
+      if (this.draggingBgSlider || pointInRect(pos, track)) {
+        this.draggingBgSlider = true;
+        save.bgTuning = { ...defaultBgTuning(), ...save.bgTuning };
+        save.bgTuning[key] = sliderValueFromPos(slider, pos);
+        writeSave(save);
+        return;
+      }
+    }
   },
 
   _handleSliderDrag(save, pos) {

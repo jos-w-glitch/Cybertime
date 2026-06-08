@@ -27,11 +27,8 @@ const App = {
     await loadGameFont();
     try { AudioEngine.init({ musicVolume: 0.55, sfxVolume: 0.7 }); } catch {}
     UiIcons.load();
-    BackgroundEngine.preloadAll().catch(() => {});
-
     this.bindEvents();
     this.bindNameForm();
-    this.bindCustomBackground();
 
     Auth.init(() => this.startSession());
 
@@ -41,21 +38,6 @@ const App = {
       this.loopStarted = true;
       requestAnimationFrame((t) => this.loop(t));
     }
-  },
-
-  bindCustomBackground() {
-    document.getElementById("custom-bg-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (!file || !this.save) return;
-      try {
-        await BackgroundEngine.uploadCustom(file);
-        this.save.equippedBackground = "custom";
-        writeSave(this.save);
-      } catch (err) {
-        console.warn(err);
-      }
-    });
   },
 
   bindNameForm() {
@@ -203,6 +185,9 @@ const App = {
       if (this.state === "settings" && Screens.draggingSlider) {
         Screens._handleSliderDrag(this.save, Input.mousePos);
       }
+      if (this.state === "shop" && Screens.draggingBgSlider) {
+        Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
+      }
     });
 
     canvas.addEventListener("pointerup", (e) => {
@@ -213,6 +198,7 @@ const App = {
         return;
       }
       Screens.draggingSlider = false;
+      Screens.draggingBgSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {

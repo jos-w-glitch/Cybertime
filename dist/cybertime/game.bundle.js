@@ -210,16 +210,11 @@ const MOUSE_SKINS = [
 ];
 
 const BACKGROUNDS = [
-  { id: "grid-black", name: "BLACK GRID", price: 0, video: "assets/backgrounds/bg-grid-black.mp4" },
-  { id: "grid-blue", name: "BLUE GRID", price: 400, video: "assets/backgrounds/bg-grid-blue.mp4" },
-  { id: "grid-neon", name: "NEON GRID", price: 650, video: "assets/backgrounds/bg-grid-neon.mp4" },
-  { id: "neon-flow", name: "NEON FLOW", price: 900, video: "assets/backgrounds/bg-neon-flow.mp4" },
-  { id: "minimal", name: "MINIMAL", price: 1200, video: "assets/backgrounds/bg-minimal.mp4" },
-  { id: "wave", name: "WAVE", price: 1500, video: "assets/backgrounds/bg-wave.mp4" },
-  { id: "topo", name: "TOPO MAP", price: 1900, video: "assets/backgrounds/bg-topo.mp4" },
-  { id: "abstract", name: "ABSTRACT", price: 2300, video: "assets/backgrounds/bg-abstract.mp4" },
-  { id: "glitch", name: "GLITCH", price: 2700, video: "assets/backgrounds/bg-glitch.mp4" },
-  { id: "custom", name: "CUSTOM UPLOAD", price: 3500, custom: true },
+  { id: "cyber", name: "CYBER GRID", price: 0, bg: [10, 10, 18], grid: [25, 20, 45], accent: [0, 255, 200] },
+  { id: "matrix", name: "MATRIX", price: 350, bg: [4, 12, 6], grid: [10, 40, 15], accent: [50, 255, 100] },
+  { id: "sunset", name: "SUNSET", price: 550, bg: [28, 8, 32], grid: [80, 30, 60], accent: [255, 120, 40] },
+  { id: "space", name: "DEEP SPACE", price: 800, bg: [5, 5, 20], grid: [30, 30, 80], accent: [120, 140, 255] },
+  { id: "retro", name: "RETRO WAVE", price: 1200, bg: [15, 5, 35], grid: [100, 20, 120], accent: [255, 0, 180] },
 ];
 
 const XP_PER_SCORE = 2;
@@ -690,9 +685,10 @@ const defaultSave = () => ({
   leaderboards: {},
   leaderboardRewards: {},
   ownedSkins: ["default"],
-  ownedBackgrounds: ["grid-black"],
+  ownedBackgrounds: ["cyber"],
   equippedSkin: "default",
-  equippedBackground: "grid-black",
+  equippedBackground: "cyber",
+  bgTuning: defaultBgTuning(),
   keys: { ball: 0, bomb: 2, ballKey: "KeyZ", bombKey: "KeyX" },
   settings: { musicVolume: 0.55, sfxVolume: 0.7, accessibility: false },
 });
@@ -722,7 +718,9 @@ function normalizeSave(raw) {
   if (!data.ownedSkins.includes(data.equippedSkin)) data.equippedSkin = "default";
   data.ownedBackgrounds = [...new Set(data.ownedBackgrounds.map(migrateBackgroundId))];
   data.equippedBackground = migrateBackgroundId(data.equippedBackground);
-  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "grid-black";
+  if (!data.bgTuning || typeof data.bgTuning !== "object") data.bgTuning = defaultBgTuning();
+  data.bgTuning = { ...defaultBgTuning(), ...data.bgTuning };
+  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "cyber";
   if (typeof data.pin === "string" && !/^\d{4}$/.test(data.pin)) delete data.pin;
   return data;
 }
@@ -1169,194 +1167,55 @@ const PwaInstall = {
     return "Safari → Share (□↑) → Add to Home Screen";
   },
 };
-const CUSTOM_BG_STORE = "cybertime-custom-bg";
-const CUSTOM_BG_MAX_BYTES = 6 * 1024 * 1024;
-
-const CustomBackground = {
-  async save(file) {
-    if (file.size > CUSTOM_BG_MAX_BYTES) throw new Error("File too large (max 6MB)");
-    const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("files", "readwrite");
-      tx.objectStore("files").put({ blob: file, type: file.type, at: Date.now() }, "active");
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  },
-
-  async load() {
-    const db = await this._openDb();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction("files", "readonly");
-      const req = tx.objectStore("files").get("active");
-      req.onsuccess = () => resolve(req.result || null);
-      req.onerror = () => reject(req.error);
-    });
-  },
-
-  async clear() {
-    const db = await this._openDb();
-    await new Promise((resolve, reject) => {
-      const tx = db.transaction("files", "readwrite");
-      tx.objectStore("files").delete("active");
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error);
-    });
-  },
-
-  _openDb() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(CUSTOM_BG_STORE, 1);
-      req.onupgradeneeded = () => req.result.createObjectStore("files");
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
-  },
-};
-
-const BackgroundEngine = {
-  _cache: new Map(),
-  _custom: null,
-  _customUrl: null,
-
-  videoPath(bg) {
-    if (!bg?.video) return null;
-    return bg.video.startsWith("assets/") ? bg.video : `assets/backgrounds/${bg.video}`;
-  },
-
-  _makeVideo(src) {
-    const video = document.createElement("video");
-    video.src = src;
-    video.muted = true;
-    video.loop = true;
-    video.playsInline = true;
-    video.preload = "auto";
-    video.play().catch(() => {});
-    return video;
-  },
-
-  async preload(bg) {
-    if (!bg || bg.custom || this._cache.has(bg.id)) return;
-    const src = this.videoPath(bg);
-    if (!src) return;
-    const video = this._makeVideo(src);
-    this._cache.set(bg.id, video);
-    await new Promise((resolve) => {
-      if (video.readyState >= 2) { resolve(); return; }
-      video.addEventListener("canplay", () => resolve(), { once: true });
-      video.addEventListener("error", () => resolve(), { once: true });
-    });
-  },
-
-  async preloadAll() {
-    await Promise.all(BACKGROUNDS.filter((b) => !b.custom).map((b) => this.preload(b)));
-    await this.loadCustom();
-  },
-
-  async loadCustom() {
-    this._revokeCustom();
-    const record = await CustomBackground.load().catch(() => null);
-    if (!record?.blob) return;
-    const url = URL.createObjectURL(record.blob);
-    this._customUrl = url;
-    if (record.type.startsWith("video/")) {
-      const video = this._makeVideo(url);
-      this._custom = { kind: "video", el: video };
-      await new Promise((resolve) => {
-        video.addEventListener("canplay", () => resolve(), { once: true });
-        video.addEventListener("error", () => resolve(), { once: true });
-      });
-      return;
-    }
-    const img = new Image();
-    img.src = url;
-    this._custom = { kind: "image", el: img };
-    await new Promise((resolve) => {
-      if (img.complete) { resolve(); return; }
-      img.onload = () => resolve();
-      img.onerror = () => resolve();
-    });
-  },
-
-  async uploadCustom(file) {
-    await CustomBackground.save(file);
-    await this.loadCustom();
-  },
-
-  _revokeCustom() {
-    if (this._customUrl) URL.revokeObjectURL(this._customUrl);
-    this._customUrl = null;
-    this._custom = null;
-  },
-
-  _activeMedia(bg, save) {
-    if (bg?.custom && save?.ownedBackgrounds?.includes("custom") && save.equippedBackground === "custom") {
-      return this._custom;
-    }
-    if (!bg?.video) return null;
-    return { kind: "video", el: this._cache.get(bg.id) };
-  },
-
-  _drawCover(ctx, el, vw, vh) {
-    const scale = Math.max(viewW() / vw, viewH() / vh);
-    const w = vw * scale;
-    const h = vh * scale;
-    ctx.drawImage(el, (viewW() - w) / 2, (viewH() - h) / 2, w, h);
-  },
-
-  draw(ctx, bg, save) {
-    const media = this._activeMedia(bg, save);
-    if (!media?.el) return false;
-    const el = media.el;
-    const ready = media.kind === "video" ? el.readyState >= 2 : el.complete;
-    if (!ready) return false;
-
-    const vw = media.kind === "video" ? (el.videoWidth || 1280) : el.naturalWidth;
-    const vh = media.kind === "video" ? (el.videoHeight || 720) : el.naturalHeight;
-    this._drawCover(ctx, el, vw, vh);
-    ctx.fillStyle = "rgba(5,5,15,0.32)";
-    ctx.fillRect(0, 0, viewW(), viewH());
-    return true;
-  },
-
-  drawThumb(ctx, x, y, w, h, bg, save) {
-    const prev = save?.equippedBackground;
-    const tempSave = prev === bg.id ? save : { ...save, equippedBackground: bg.id };
-    const media = this._activeMedia(bg, tempSave);
-    ctx.save();
-    roundRect(ctx, x, y, w, h, 6);
-    ctx.clip();
-    if (media?.el) {
-      const el = media.el;
-      const ready = media.kind === "video" ? el.readyState >= 2 : el.complete;
-      if (ready) {
-        const vw = media.kind === "video" ? (el.videoWidth || 1280) : el.naturalWidth;
-        const vh = media.kind === "video" ? (el.videoHeight || 720) : el.naturalHeight;
-        const scale = Math.max(w / vw, h / vh);
-        const dw = vw * scale;
-        const dh = vh * scale;
-        ctx.drawImage(el, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
-        ctx.restore();
-        return;
-      }
-    }
-    if (!bg.custom) this.preload(bg);
-    ctx.fillStyle = rgb(COLORS.bg);
-    ctx.fillRect(x, y, w, h);
-    ctx.restore();
-  },
-};
-
-const LEGACY_BACKGROUND_IDS = {
-  cyber: "grid-black",
-  matrix: "grid-blue",
-  sunset: "grid-neon",
-  space: "neon-flow",
-  retro: "wave",
+const LEGACY_VIDEO_BG_IDS = {
+  "grid-black": "cyber",
+  "grid-blue": "matrix",
+  "grid-neon": "sunset",
+  "neon-flow": "space",
+  "minimal": "cyber",
+  "wave": "retro",
+  "topo": "space",
+  "abstract": "retro",
+  "glitch": "matrix",
+  custom: "cyber",
 };
 
 function migrateBackgroundId(id) {
-  return LEGACY_BACKGROUND_IDS[id] || id;
+  return LEGACY_VIDEO_BG_IDS[id] || id;
+}
+
+function defaultBgTuning() {
+  return { bg: 1, grid: 1, accent: 1 };
+}
+
+function resolveBackground(save) {
+  const theme = getBackgroundById(save.equippedBackground);
+  const t = { ...defaultBgTuning(), ...save.bgTuning };
+  const scale = (rgb, factor) => rgb.map((c) => Math.round(c * (0.12 + 0.88 * factor)));
+  return {
+    ...theme,
+    bg: scale(theme.bg, t.bg),
+    grid: scale(theme.grid, t.grid),
+    accent: scale(theme.accent, t.accent),
+  };
+}
+
+function drawBackgroundSwatch(ctx, x, y, w, h, item, save) {
+  const preview = item.id === save.equippedBackground
+    ? resolveBackground(save)
+    : { bg: item.bg, grid: item.grid, accent: item.accent };
+  ctx.fillStyle = rgb(preview.bg);
+  ctx.fillRect(x, y, w, h);
+  ctx.strokeStyle = rgb(preview.grid);
+  ctx.lineWidth = 1;
+  for (let gx = x; gx < x + w; gx += 14) {
+    ctx.beginPath();
+    ctx.moveTo(gx, y);
+    ctx.lineTo(gx, y + h);
+    ctx.stroke();
+  }
+  ctx.fillStyle = rgb(preview.accent);
+  ctx.fillRect(x + w - 18, y + 6, 12, 12);
 }
 function rgb(c, a = 1) {
   return a === 1 ? `rgb(${c[0]},${c[1]},${c[2]})` : `rgba(${c[0]},${c[1]},${c[2]},${a})`;
@@ -1477,10 +1336,25 @@ function drawIconButton(ctx, rect, img, hovered) {
 }
 
 function drawBackground(ctx, now, bgTheme, stars, save) {
-  if (BackgroundEngine.draw(ctx, bgTheme, save || Input.save)) return;
+  const bg = save ? resolveBackground(save) : bgTheme;
 
-  ctx.fillStyle = rgb(COLORS.bg);
+  ctx.fillStyle = rgb(bg.bg);
   ctx.fillRect(0, 0, viewW(), viewH());
+
+  ctx.strokeStyle = rgb(bg.grid);
+  ctx.lineWidth = 1;
+  for (let x = 0; x < viewW(); x += 50) {
+    ctx.beginPath();
+    ctx.moveTo(x, 0);
+    ctx.lineTo(x, viewH());
+    ctx.stroke();
+  }
+  for (let y = 0; y < viewH(); y += 50) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(viewW(), y);
+    ctx.stroke();
+  }
 
   for (const star of stars || []) {
     const alpha = 155 + 100 * Math.sin(now * 0.005 * star.speed);
@@ -3140,6 +3014,8 @@ const Screens = {
   scrollY: 0,
   listMaxScroll: 0,
   draggingSlider: false,
+  draggingBgSlider: false,
+  bgSliders: null,
   scrollDrag: null,
   infiniteSetup: { trackId: 1, mechanicIndex: 2, red: true, orange: true, sliders: false, sliderRed: false },
   shareFeedback: "",
@@ -3191,8 +3067,9 @@ const Screens = {
   },
 
   scrollableState(state) {
+    if (state === "shop") return true;
     if (!Input.touchMode) return false;
-    return state === "levels" || state === "shop";
+    return state === "levels";
   },
 
   beginScrollDrag(y) {
@@ -3257,8 +3134,17 @@ const Screens = {
     return Input.touchMode ? 188 : 190;
   },
 
-  updateShopScroll(count) {
-    const content = this.shopListTop() + count * this.shopRowHeight();
+  shopColorPanelHeight() {
+    return this.shopTab === "backgrounds" ? 200 : 0;
+  },
+
+  shopItemCount() {
+    if (this.shopTab === "skins") return MOUSE_SKINS.length;
+    return BACKGROUNDS.length + 1;
+  },
+
+  updateShopScroll() {
+    const content = this.shopListTop() + this.shopItemCount() * this.shopRowHeight() + this.shopColorPanelHeight();
     this.listMaxScroll = Math.max(0, content - (viewH() - 120));
     this.scrollY = Math.min(this.scrollY, this.listMaxScroll);
   },
@@ -3484,95 +3370,61 @@ const Screens = {
     this.finishButtons();
   },
 
+  drawBgColorPanel(save, mousePos, y, pad, cardW) {
+    App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+    App.ctx.fillRect(pad, y, cardW, 188);
+    App.ctx.font = uiFont(Input.touchMode ? 22 : 24);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText("FREE COLOR TUNE", pad + 16, y + 32);
+
+    const sliderW = cardW - 32;
+    const labels = { bg: "BACKGROUND", grid: "GRID", accent: "GLOW" };
+    this.bgSliders = {};
+    let sy = y + 48;
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = { x: pad + 16, y: sy + 20, w: sliderW - 32, label: labels[key] };
+      this.bgSliders[key] = slider;
+      drawSlider(App.ctx, slider, save.bgTuning?.[key] ?? 1);
+      sy += 56;
+    }
+  },
+
   drawShop(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
     drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = this.screenPad();
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
+    const tabH = btnHeight(Input.touchMode ? 48 : 40);
 
-    if (Input.touchMode) {
-      App.ctx.font = uiFont(40);
-      App.ctx.fillStyle = rgb(COLORS.blue);
-      App.ctx.fillText("SHOP", pad, 72);
-      drawCoins(App.ctx, save, viewW() - 210, 72);
-
-      const tabW = (viewW() - pad * 2 - 12) / 2;
-      const tabH = btnHeight(48);
-      drawNeonButton(App.ctx, this.btn("tabSkins", "SKINS", pad, 108, tabW, tabH), "SKINS", this.shopTab === "skins", true);
-      drawNeonButton(App.ctx, this.btn("tabBgs", "BGS", pad + tabW + 12, 108, tabW, tabH), "BGS", this.shopTab === "backgrounds", true);
-
-      this.updateShopScroll(items.length);
-      const rowH = this.shopRowHeight();
-      const listTop = this.shopListTop();
-      const cardW = viewW() - pad * 2;
-      const actionH = btnHeight(48);
-
-      App.ctx.save();
-      App.ctx.beginPath();
-      App.ctx.rect(0, listTop - 8, viewW(), viewH() - listTop - 100);
-      App.ctx.clip();
-
-      items.forEach((item, i) => {
-        const y = listTop + i * rowH - this.scrollY;
-        if (y + rowH < listTop || y > viewH() - 80) return;
-
-        const owned = this.shopTab === "skins"
-          ? save.ownedSkins.includes(item.id)
-          : save.ownedBackgrounds.includes(item.id);
-        const equipped = this.shopTab === "skins"
-          ? save.equippedSkin === item.id
-          : save.equippedBackground === item.id;
-
-        App.ctx.fillStyle = "rgba(20,20,32,0.55)";
-        App.ctx.fillRect(pad, y, cardW, rowH - 12);
-
-        App.ctx.font = uiFont(24);
-        App.ctx.fillStyle = rgb(COLORS.text);
-        App.ctx.fillText(item.name, pad + 16, y + 34);
-        App.ctx.font = uiFont(17);
-        App.ctx.fillStyle = rgb(owned ? COLORS.green : COLORS.gold);
-        App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, pad + 16, y + 62);
-
-        if (this.shopTab === "skins") {
-          drawCursor(App.ctx, { x: pad + cardW - 72, y: y + 28 }, item);
-        } else {
-          BackgroundEngine.drawThumb(App.ctx, pad + cardW - 88, y + 18, 64, 36, item, save);
-        }
-
-        const actionY = y + rowH - actionH - 20;
-        if (this.shopTab === "backgrounds" && item.custom && owned) {
-          const halfW = (cardW - 36) / 2;
-          drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", pad + 12, actionY, halfW, actionH), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
-          if (!equipped) {
-            drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 24 + halfW, actionY, halfW, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-          }
-        } else if (owned && !equipped) {
-          drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 12, actionY, cardW - 24, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-        } else if (!owned) {
-          drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", pad + 12, actionY, cardW - 24, actionH), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
-        }
-      });
-
-      App.ctx.restore();
-      drawNeonButton(App.ctx, this.btn("back", "BACK", pad, viewH() - 90, cardW, btnHeight(52)), "BACK", pointInRect(mousePos, this.buttons.back));
-      this.finishButtons();
-      return;
-    }
-
-    App.ctx.font = gameFont(48);
+    App.ctx.font = Input.touchMode ? uiFont(40) : gameFont(48);
     App.ctx.fillStyle = rgb(COLORS.blue);
-    App.ctx.fillText("SHOP", 80, 90);
-    drawCoins(App.ctx, save, viewW() - 220, 90);
+    App.ctx.fillText("SHOP", pad, Input.touchMode ? 72 : 90);
+    drawCoins(App.ctx, save, viewW() - (Input.touchMode ? 210 : 220), Input.touchMode ? 72 : 90);
 
-    drawNeonButton(App.ctx, this.btn("tabSkins", "MOUSE SKINS", 80, 120, 200, 40), "MOUSE SKINS", this.shopTab === "skins", true);
-    drawNeonButton(App.ctx, this.btn("tabBgs", "BACKGROUNDS", 300, 120, 200, 40), "BACKGROUNDS", this.shopTab === "backgrounds", true);
+    const tabW = Input.touchMode ? (viewW() - pad * 2 - 12) / 2 : 200;
+    const tabY = Input.touchMode ? 108 : 120;
+    const tabSkinsX = pad;
+    const tabBgsX = Input.touchMode ? pad + tabW + 12 : 300;
+    drawNeonButton(App.ctx, this.btn("tabSkins", Input.touchMode ? "SKINS" : "MOUSE SKINS", tabSkinsX, tabY, tabW, tabH), Input.touchMode ? "SKINS" : "MOUSE SKINS", this.shopTab === "skins", true);
+    drawNeonButton(App.ctx, this.btn("tabBgs", Input.touchMode ? "BGS" : "BACKGROUNDS", tabBgsX, tabY, tabW, tabH), Input.touchMode ? "BGS" : "BACKGROUNDS", this.shopTab === "backgrounds", true);
+
+    this.updateShopScroll();
+    const rowH = this.shopRowHeight();
+    const listTop = this.shopListTop();
+    const cardW = viewW() - pad * 2;
+    const actionH = btnHeight(Input.touchMode ? 48 : 36);
+    const listBottom = viewH() - (Input.touchMode ? 100 : 90);
+
+    App.ctx.save();
+    App.ctx.beginPath();
+    App.ctx.rect(0, listTop - 8, viewW(), listBottom - listTop + 8);
+    App.ctx.clip();
 
     items.forEach((item, i) => {
-      const col = i % 2;
-      const row = Math.floor(i / 2);
-      const x = 80 + col * 580;
-      const y = 190 + row * 130;
+      const y = listTop + i * rowH - this.scrollY;
+      if (y + rowH < listTop || y > listBottom) return;
+
       const owned = this.shopTab === "skins"
         ? save.ownedSkins.includes(item.id)
         : save.ownedBackgrounds.includes(item.id);
@@ -3580,32 +3432,42 @@ const Screens = {
         ? save.equippedSkin === item.id
         : save.equippedBackground === item.id;
 
-      App.ctx.font = gameFont(24);
+      App.ctx.fillStyle = "rgba(20,20,32,0.55)";
+      App.ctx.fillRect(pad, y, cardW, rowH - 12);
+
+      App.ctx.font = Input.touchMode ? uiFont(24) : gameFont(24);
       App.ctx.fillStyle = rgb(COLORS.text);
-      App.ctx.fillText(item.name, x, y);
-      App.ctx.font = gameFont(18);
+      App.ctx.fillText(item.name, pad + 16, y + 34);
+      App.ctx.font = Input.touchMode ? uiFont(17) : gameFont(18);
       App.ctx.fillStyle = rgb(owned ? COLORS.green : COLORS.gold);
-      App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, x, y + 28);
+      App.ctx.fillText(owned ? (equipped ? "EQUIPPED" : "OWNED") : `${item.price} COINS`, pad + 16, y + 62);
 
       if (this.shopTab === "skins") {
-        drawCursor(App.ctx, { x: x + 400, y: y - 10 }, item);
+        drawCursor(App.ctx, { x: pad + cardW - 72, y: y + 28 }, item);
       } else {
-        BackgroundEngine.drawThumb(App.ctx, x + 360, y - 24, 80, 40, item, save);
+        drawBackgroundSwatch(App.ctx, pad + cardW - 88, y + 18, 64, 36, item, save);
       }
 
-      if (this.shopTab === "backgrounds" && item.custom && owned) {
-        drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", x + 180, y + 36, 110, 36), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
-        if (!equipped) {
-          drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 300, y + 36, 110, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
-        }
-      } else if (owned && !equipped) {
-        drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 320, y + 36, 120, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
+      const actionY = y + rowH - actionH - 20;
+      if (owned && !equipped) {
+        drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 12, actionY, cardW - 24, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
       } else if (!owned) {
-        drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", x + 320, y + 36, 120, 36), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
+        drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", pad + 12, actionY, cardW - 24, actionH), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
       }
     });
 
-    drawNeonButton(App.ctx, this.btn("back", "BACK", null, 620), "BACK", pointInRect(mousePos, this.buttons.back));
+    if (this.shopTab === "backgrounds") {
+      const panelY = listTop + items.length * rowH - this.scrollY;
+      if (panelY + 188 >= listTop && panelY <= listBottom) {
+        this.drawBgColorPanel(save, mousePos, panelY, pad, cardW);
+      }
+    }
+
+    App.ctx.restore();
+
+    const backY = viewH() - (Input.touchMode ? 90 : 70);
+    const backW = Input.touchMode ? cardW : null;
+    drawNeonButton(App.ctx, this.btn("back", "BACK", Input.touchMode ? pad : null, backY, backW, btnHeight(Input.touchMode ? 52 : 44)), "BACK", pointInRect(mousePos, this.buttons.back));
     this.finishButtons();
   },
 
@@ -3844,9 +3706,13 @@ const Screens = {
     }
 
     if (state === "shop") {
-      if (this._hit("tabSkins", pos)) { this.shopTab = "skins"; this.resetScroll(); return true; }
-      if (this._hit("tabBgs", pos)) { this.shopTab = "backgrounds"; this.resetScroll(); return true; }
+      if (this._hit("tabSkins", pos)) { this.shopTab = "skins"; this.resetScroll(); this.bgSliders = null; return true; }
+      if (this._hit("tabBgs", pos)) { this.shopTab = "backgrounds"; this.resetScroll(); this.bgSliders = null; return true; }
       if (this._hit("back", pos)) { App.state = "menu"; return true; }
+      if (this.shopTab === "backgrounds") {
+        this._handleShopBgSliderDrag(save, pos);
+        if (this.draggingBgSlider) return true;
+      }
       return this._handleShopPurchase(save, pos);
     }
 
@@ -3914,17 +3780,9 @@ const Screens = {
     return rect && pointInRect(pos, rect);
   },
 
-  pickCustomBackground() {
-    document.getElementById("custom-bg-input")?.click();
-  },
-
   _handleShopPurchase(save, pos) {
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
     for (const item of items) {
-      if (this._hit(`upload-${item.id}`, pos)) {
-        if (item.custom) this.pickCustomBackground();
-        return true;
-      }
       if (this._hit(`buy-${item.id}`, pos)) {
         const col = this.shopTab === "skins" ? "ownedSkins" : "ownedBackgrounds";
         const result = purchaseItem(save, item.price, col, item.id);
@@ -3932,7 +3790,7 @@ const Screens = {
           if (this.shopTab === "skins") save.equippedSkin = item.id;
           else {
             save.equippedBackground = item.id;
-            if (item.custom) this.pickCustomBackground();
+            save.bgTuning = defaultBgTuning();
           }
           writeSave(save);
         }
@@ -3942,13 +3800,29 @@ const Screens = {
         if (this.shopTab === "skins") save.equippedSkin = item.id;
         else {
           save.equippedBackground = item.id;
-          BackgroundEngine.preload(getBackgroundById(item.id));
+          save.bgTuning = defaultBgTuning();
         }
         writeSave(save);
         return true;
       }
     }
     return false;
+  },
+
+  _handleShopBgSliderDrag(save, pos) {
+    if (!this.bgSliders) return;
+    for (const key of ["bg", "grid", "accent"]) {
+      const slider = this.bgSliders[key];
+      if (!slider) continue;
+      const track = { x: slider.x, y: slider.y - 10, w: slider.w, h: 28 };
+      if (this.draggingBgSlider || pointInRect(pos, track)) {
+        this.draggingBgSlider = true;
+        save.bgTuning = { ...defaultBgTuning(), ...save.bgTuning };
+        save.bgTuning[key] = sliderValueFromPos(slider, pos);
+        writeSave(save);
+        return;
+      }
+    }
   },
 
   _handleSliderDrag(save, pos) {
@@ -3995,11 +3869,8 @@ const App = {
     await loadGameFont();
     try { AudioEngine.init({ musicVolume: 0.55, sfxVolume: 0.7 }); } catch {}
     UiIcons.load();
-    BackgroundEngine.preloadAll().catch(() => {});
-
     this.bindEvents();
     this.bindNameForm();
-    this.bindCustomBackground();
 
     Auth.init(() => this.startSession());
 
@@ -4009,21 +3880,6 @@ const App = {
       this.loopStarted = true;
       requestAnimationFrame((t) => this.loop(t));
     }
-  },
-
-  bindCustomBackground() {
-    document.getElementById("custom-bg-input")?.addEventListener("change", async (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (!file || !this.save) return;
-      try {
-        await BackgroundEngine.uploadCustom(file);
-        this.save.equippedBackground = "custom";
-        writeSave(this.save);
-      } catch (err) {
-        console.warn(err);
-      }
-    });
   },
 
   bindNameForm() {
@@ -4171,6 +4027,9 @@ const App = {
       if (this.state === "settings" && Screens.draggingSlider) {
         Screens._handleSliderDrag(this.save, Input.mousePos);
       }
+      if (this.state === "shop" && Screens.draggingBgSlider) {
+        Screens._handleShopBgSliderDrag(this.save, Input.mousePos);
+      }
     });
 
     canvas.addEventListener("pointerup", (e) => {
@@ -4181,6 +4040,7 @@ const App = {
         return;
       }
       Screens.draggingSlider = false;
+      Screens.draggingBgSlider = false;
     });
 
     document.addEventListener("keydown", (e) => {

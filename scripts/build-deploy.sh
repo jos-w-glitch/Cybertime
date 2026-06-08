@@ -41,7 +41,6 @@ cat "$ROOT/js/config.js" \
     "$ROOT/js/ui.js" \
     "$ROOT/js/main.js" > "$GAME/game.bundle.js"
 
-cp -R "$ROOT/assets/backgrounds" "$GAME/assets/"
 cp "$ROOT/assets/logo.png" "$GAME/assets/"
 cp "$ROOT/assets/1.png" "$GAME/assets/"
 cp "$ROOT/assets/fonts/"*.ttf "$GAME/assets/fonts/"

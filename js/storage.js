@@ -8,9 +8,10 @@ const defaultSave = () => ({
   leaderboards: {},
   leaderboardRewards: {},
   ownedSkins: ["default"],
-  ownedBackgrounds: ["grid-black"],
+  ownedBackgrounds: ["cyber"],
   equippedSkin: "default",
-  equippedBackground: "grid-black",
+  equippedBackground: "cyber",
+  bgTuning: defaultBgTuning(),
   keys: { ball: 0, bomb: 2, ballKey: "KeyZ", bombKey: "KeyX" },
   settings: { musicVolume: 0.55, sfxVolume: 0.7, accessibility: false },
 });
@@ -40,7 +41,9 @@ function normalizeSave(raw) {
   if (!data.ownedSkins.includes(data.equippedSkin)) data.equippedSkin = "default";
   data.ownedBackgrounds = [...new Set(data.ownedBackgrounds.map(migrateBackgroundId))];
   data.equippedBackground = migrateBackgroundId(data.equippedBackground);
-  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "grid-black";
+  if (!data.bgTuning || typeof data.bgTuning !== "object") data.bgTuning = defaultBgTuning();
+  data.bgTuning = { ...defaultBgTuning(), ...data.bgTuning };
+  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "cyber";
   if (typeof data.pin === "string" && !/^\d{4}$/.test(data.pin)) delete data.pin;
   return data;
 }
