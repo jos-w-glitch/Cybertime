@@ -143,6 +143,12 @@ const App = {
   bindEvents() {
     canvas.addEventListener("pointerdown", (e) => {
       if (!this.sessionReady) return;
+      if (SitePromo.visible) {
+        e.preventDefault();
+        Input.syncPos(e.clientX, e.clientY);
+        Screens.handlePromoClick(Input.mousePos);
+        return;
+      }
       const inGame = this.state === "game" && this.game?.running;
       const waitingStart = inGame && !this.game.started;
       if (!inGame && e.button !== 0) return;
@@ -305,6 +311,7 @@ const App = {
     if (this.game.lastRewards?.success) CrazyGamesSdk.happytime();
     refreshLeaderboard(this.game.level.id);
     Share.prepareShareCard(this.game);
+    SitePromo.onGameOver();
     this.state = "gameover";
   },
 
@@ -331,6 +338,9 @@ const App = {
 
     try {
       clearFrame(this.ctx);
+      if (this.state === "menu") SitePromo.onEnterMenu(now);
+      else SitePromo.onLeaveMenu();
+
       if (this.state === "gameover" && this.game) {
         Screens.drawGameOver(this.game, this.save, mousePos, now, homeHovered);
         this.renderCursor(this.save);
@@ -369,6 +379,11 @@ const App = {
         this.renderCursor(this.save);
       } else {
         Screens.drawMenu(this.save, mousePos, now);
+        this.renderCursor(this.save);
+      }
+
+      if (SitePromo.visible) {
+        Screens.drawPromo(mousePos);
         this.renderCursor(this.save);
       }
     } catch (err) {
