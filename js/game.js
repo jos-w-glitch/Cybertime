@@ -142,7 +142,7 @@ const GameLogic = {
     }
 
     const result = game.currentTarget.checkClick(pos);
-    if (result === "MISS" || (game.infinite && result === "SAFE_ZONE")) {
+    if (result === "MISS" || result === "SAFE_ZONE") {
       this._registerMiss(game, pos);
       return;
     }
@@ -380,7 +380,7 @@ const GameLogic = {
     game.lastGoldenCombo = 0;
     game.floatingTexts.push(new FloatingText(game.infinite ? "MISS" : "-1", pos.x, pos.y, COLORS.red, 0));
     AudioEngine.playMiss();
-    if (game.infinite) game.hearts -= 1;
+    game.hearts -= 1;
   },
 
   _skipExpiredTarget(game, now) {
@@ -420,28 +420,20 @@ const GameLogic = {
       }
       if (msLeft <= 0) return "time";
     }
-    if (game.infinite && game.hearts <= 0) return "hearts";
+    if (game.hearts <= 0) return "hearts";
 
     if (game.currentTarget.isOffScreen) {
-      if (game.infinite) {
-        game.hearts -= 1;
-        if (game.hearts <= 0) return "hearts";
-        this._skipExpiredTarget(game, now);
-      } else {
-        return "expired";
-      }
+      game.hearts -= 1;
+      if (game.hearts <= 0) return "hearts";
+      this._skipExpiredTarget(game, now);
     }
     if (!game.graceUntil || now > game.graceUntil) {
       if (game.currentTarget.isExpired(now)) {
-        if (game.infinite) {
-          game.combo = 0;
-          game.lastGoldenCombo = 0;
-          game.hearts -= 1;
-          if (game.hearts <= 0) return "hearts";
-          this._skipExpiredTarget(game, now);
-        } else {
-          return "expired";
-        }
+        game.combo = 0;
+        game.lastGoldenCombo = 0;
+        game.hearts -= 1;
+        if (game.hearts <= 0) return "hearts";
+        this._skipExpiredTarget(game, now);
       }
     }
 
@@ -489,7 +481,7 @@ const GameLogic = {
       ctx.font = gameFont(20);
       ctx.fillStyle = rgb(COLORS.text);
       ctx.fillText(`${level.name}  BPM ${level.bpm}`, 20, 82);
-      if (game.infinite) drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
+      drawHearts(ctx, game.hearts, START_HEARTS);
       return;
     }
 
@@ -502,18 +494,12 @@ const GameLogic = {
       ctx.fillStyle = rgb(COLORS.gold);
       const bestText = `BEST: ${best}`;
       ctx.fillText(bestText, viewW() - ctx.measureText(bestText).width - 20, 55);
-      drawHearts(ctx, game.hearts, INFINITE_START_HEARTS);
     } else {
       ctx.fillStyle = rgb(game.timeLeft <= 10 ? COLORS.red : COLORS.text);
       const timeText = `TIME: ${game.timeLeft}s`;
       ctx.fillText(timeText, viewW() - ctx.measureText(timeText).width - 20, 55);
-
-      ctx.font = gameFont(20);
-      const goalMet = game.score >= level.passScore;
-      ctx.fillStyle = rgb(goalMet ? COLORS.green : COLORS.gold);
-      const goalText = `GOAL: ${game.score}/${level.passScore}`;
-      ctx.fillText(goalText, viewW() - ctx.measureText(goalText).width - 20, 82);
     }
+    drawHearts(ctx, game.hearts, START_HEARTS);
 
     ctx.font = game.infinite ? gameFont(36) : gameFont(20);
     ctx.fillStyle = rgb(COLORS.text);

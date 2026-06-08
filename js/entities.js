@@ -513,7 +513,7 @@ function createGame(level, now) {
     purpleTapPartner: 0,
     goldenBonus: null,
     lastGoldenCombo: 0,
-    hearts: level.infinite ? INFINITE_START_HEARTS : 0,
+    hearts: START_HEARTS,
   };
   return game;
 }

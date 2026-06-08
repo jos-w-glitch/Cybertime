@@ -8,9 +8,9 @@ const defaultSave = () => ({
   leaderboards: {},
   leaderboardRewards: {},
   ownedSkins: ["default"],
-  ownedBackgrounds: ["cyber"],
+  ownedBackgrounds: ["grid-black"],
   equippedSkin: "default",
-  equippedBackground: "cyber",
+  equippedBackground: "grid-black",
   keys: { ball: 0, bomb: 2, ballKey: "KeyZ", bombKey: "KeyX" },
   settings: { musicVolume: 0.55, sfxVolume: 0.7, accessibility: false },
 });
@@ -38,7 +38,9 @@ function normalizeSave(raw) {
   data.keys.ballKey = data.keys.ballKey || base.keys.ballKey;
   data.keys.bombKey = data.keys.bombKey || base.keys.bombKey;
   if (!data.ownedSkins.includes(data.equippedSkin)) data.equippedSkin = "default";
-  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "cyber";
+  data.ownedBackgrounds = [...new Set(data.ownedBackgrounds.map(migrateBackgroundId))];
+  data.equippedBackground = migrateBackgroundId(data.equippedBackground);
+  if (!data.ownedBackgrounds.includes(data.equippedBackground)) data.equippedBackground = "grid-black";
   if (typeof data.pin === "string" && !/^\d{4}$/.test(data.pin)) delete data.pin;
   return data;
 }
@@ -216,7 +218,7 @@ function finishGameRewards(save, game) {
   let leaderboardPrize = 0;
   let isLeader = false;
   const timedOut = game.endReason === "time";
-  const success = timedOut && score >= level.passScore;
+  const success = timedOut && (game.hearts ?? 0) > 0;
   const coinGain = calcCoinGain(score, success);
 
   if (success) {

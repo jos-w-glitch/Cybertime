@@ -116,24 +116,11 @@ function drawIconButton(ctx, rect, img, hovered) {
   ctx.fill();
 }
 
-function drawBackground(ctx, now, bgTheme, stars) {
-  ctx.fillStyle = rgb(bgTheme.bg);
-  ctx.fillRect(0, 0, viewW(), viewH());
+function drawBackground(ctx, now, bgTheme, stars, save) {
+  if (BackgroundEngine.draw(ctx, bgTheme, save || Input.save)) return;
 
-  ctx.strokeStyle = rgb(bgTheme.grid);
-  ctx.lineWidth = 1;
-  for (let x = 0; x < viewW(); x += 50) {
-    ctx.beginPath();
-    ctx.moveTo(x, 0);
-    ctx.lineTo(x, viewH());
-    ctx.stroke();
-  }
-  for (let y = 0; y < viewH(); y += 50) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(viewW(), y);
-    ctx.stroke();
-  }
+  ctx.fillStyle = rgb(COLORS.bg);
+  ctx.fillRect(0, 0, viewW(), viewH());
 
   for (const star of stars || []) {
     const alpha = 155 + 100 * Math.sin(now * 0.005 * star.speed);

@@ -84,7 +84,7 @@ const ICON_BUTTON_RADIUS = 14;
 const MUSIC_FADE_SECONDS = 5;
 const STAGE_TIME_SECONDS = 30;
 const PURPLE_DUAL_WINDOW_MS = 1000;
-const INFINITE_START_HEARTS = 5;
+const START_HEARTS = 5;
 const GOLDEN_BONUS_COMBO_STEP = 20;
 const GOLDEN_BONUS_POINTS = 25;
 const GOLDEN_BONUS_WINDOW_MS = 2800;
@@ -210,11 +210,16 @@ const MOUSE_SKINS = [
 ];
 
 const BACKGROUNDS = [
-  { id: "cyber", name: "CYBER GRID", price: 0, bg: [10, 10, 18], grid: [25, 20, 45], accent: [0, 255, 200] },
-  { id: "matrix", name: "MATRIX", price: 350, bg: [4, 12, 6], grid: [10, 40, 15], accent: [50, 255, 100] },
-  { id: "sunset", name: "SUNSET", price: 550, bg: [28, 8, 32], grid: [80, 30, 60], accent: [255, 120, 40] },
-  { id: "space", name: "DEEP SPACE", price: 800, bg: [5, 5, 20], grid: [30, 30, 80], accent: [120, 140, 255] },
-  { id: "retro", name: "RETRO WAVE", price: 1200, bg: [15, 5, 35], grid: [100, 20, 120], accent: [255, 0, 180] },
+  { id: "grid-black", name: "BLACK GRID", price: 0, video: "assets/backgrounds/bg-grid-black.mp4" },
+  { id: "grid-blue", name: "BLUE GRID", price: 400, video: "assets/backgrounds/bg-grid-blue.mp4" },
+  { id: "grid-neon", name: "NEON GRID", price: 650, video: "assets/backgrounds/bg-grid-neon.mp4" },
+  { id: "neon-flow", name: "NEON FLOW", price: 900, video: "assets/backgrounds/bg-neon-flow.mp4" },
+  { id: "minimal", name: "MINIMAL", price: 1200, video: "assets/backgrounds/bg-minimal.mp4" },
+  { id: "wave", name: "WAVE", price: 1500, video: "assets/backgrounds/bg-wave.mp4" },
+  { id: "topo", name: "TOPO MAP", price: 1900, video: "assets/backgrounds/bg-topo.mp4" },
+  { id: "abstract", name: "ABSTRACT", price: 2300, video: "assets/backgrounds/bg-abstract.mp4" },
+  { id: "glitch", name: "GLITCH", price: 2700, video: "assets/backgrounds/bg-glitch.mp4" },
+  { id: "custom", name: "CUSTOM UPLOAD", price: 3500, custom: true },
 ];
 
 const XP_PER_SCORE = 2;

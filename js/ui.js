@@ -155,7 +155,7 @@ const Screens = {
   drawMenu(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     App.ctx.font = gameFont(72);
     App.ctx.fillStyle = rgb(COLORS.blue);
@@ -196,7 +196,7 @@ const Screens = {
   drawLevels(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     App.ctx.font = gameFont(48);
     App.ctx.fillStyle = rgb(COLORS.blue);
@@ -229,7 +229,7 @@ const Screens = {
       App.ctx.fillStyle = rgb(unlocked ? COLORS.text : COLORS.gray);
       App.ctx.fillText(`${level.id}. ${level.name}${cleared ? " ✓" : ""}`, 80, y + 18);
       App.ctx.font = gameFont(16);
-      App.ctx.fillText(`GOAL ${level.passScore} | 30s | HS ${hs}`, 80, y + 42);
+      App.ctx.fillText(`${START_HEARTS} hearts | 30s | HS ${hs}`, 80, y + 42);
       App.ctx.fillStyle = rgb(COLORS.purple);
       App.ctx.fillText(level.featureHint, 80, y + 62);
 
@@ -238,7 +238,7 @@ const Screens = {
       } else {
         const prev = getLevelById(level.id - 1);
         App.ctx.fillStyle = rgb(COLORS.gray);
-        App.ctx.fillText(`Clear stage ${prev.id} (${prev.passScore} pts)`, 80, y + 62);
+        App.ctx.fillText(`Clear stage ${prev.id} first`, 80, y + 62);
       }
     });
 
@@ -251,7 +251,7 @@ const Screens = {
   drawLevelLeaderboard(save, levelId, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     const level = getLevelById(levelId);
     const entries = getLeaderboard(save, levelId);
@@ -278,7 +278,7 @@ const Screens = {
   drawInfiniteSelect(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
     const setup = this.infiniteSetup;
     const level = getLevelById(setup.trackId);
     const modeKey = buildInfiniteModeKey(setup.trackId, setup);
@@ -336,7 +336,7 @@ const Screens = {
   drawTutorial(tutorial, mousePos, now, save) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     const btn = this.btn("tutorialGo", "GOT IT", null, null, Input.touchMode ? 280 : 220, btnHeight(52));
     btn.y = viewH() / 2 + 80 + tutorial.lines.length * 18;
@@ -355,7 +355,7 @@ const Screens = {
   drawShop(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
     const pad = this.screenPad();
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
 
@@ -405,12 +405,17 @@ const Screens = {
         if (this.shopTab === "skins") {
           drawCursor(App.ctx, { x: pad + cardW - 72, y: y + 28 }, item);
         } else {
-          App.ctx.fillStyle = rgb(item.accent);
-          App.ctx.fillRect(pad + cardW - 88, y + 18, 64, 36);
+          BackgroundEngine.drawThumb(App.ctx, pad + cardW - 88, y + 18, 64, 36, item, save);
         }
 
         const actionY = y + rowH - actionH - 20;
-        if (owned && !equipped) {
+        if (this.shopTab === "backgrounds" && item.custom && owned) {
+          const halfW = (cardW - 36) / 2;
+          drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", pad + 12, actionY, halfW, actionH), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
+          if (!equipped) {
+            drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 24 + halfW, actionY, halfW, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
+          }
+        } else if (owned && !equipped) {
           drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", pad + 12, actionY, cardW - 24, actionH), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
         } else if (!owned) {
           drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", pad + 12, actionY, cardW - 24, actionH), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
@@ -453,11 +458,15 @@ const Screens = {
       if (this.shopTab === "skins") {
         drawCursor(App.ctx, { x: x + 400, y: y - 10 }, item);
       } else {
-        App.ctx.fillStyle = rgb(item.accent);
-        App.ctx.fillRect(x + 360, y - 24, 80, 40);
+        BackgroundEngine.drawThumb(App.ctx, x + 360, y - 24, 80, 40, item, save);
       }
 
-      if (owned && !equipped) {
+      if (this.shopTab === "backgrounds" && item.custom && owned) {
+        drawNeonButton(App.ctx, this.btn(`upload-${item.id}`, "UPLOAD", x + 180, y + 36, 110, 36), "UPLOAD", pointInRect(mousePos, this.buttons[`upload-${item.id}`]), true);
+        if (!equipped) {
+          drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 300, y + 36, 110, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
+        }
+      } else if (owned && !equipped) {
         drawNeonButton(App.ctx, this.btn(`equip-${item.id}`, "EQUIP", x + 320, y + 36, 120, 36), "EQUIP", pointInRect(mousePos, this.buttons[`equip-${item.id}`]), true);
       } else if (!owned) {
         drawNeonButton(App.ctx, this.btn(`buy-${item.id}`, "BUY", x + 320, y + 36, 120, 36), "BUY", pointInRect(mousePos, this.buttons[`buy-${item.id}`]), true);
@@ -471,7 +480,7 @@ const Screens = {
   drawSettings(save, mousePos, now) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     App.ctx.font = gameFont(48);
     App.ctx.fillStyle = rgb(COLORS.blue);
@@ -533,7 +542,7 @@ const Screens = {
   drawHowTo(mousePos, now, save) {
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
 
     let y = 80;
     getHowToLines().forEach((line, i) => {
@@ -550,7 +559,7 @@ const Screens = {
 
   drawGameScreen(game, now, save) {
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
     if (!game.started) {
       game.startTarget.draw(App.ctx);
       GameLogic.drawHud(App.ctx, game, game.level, save);
@@ -570,7 +579,7 @@ const Screens = {
     if (!game) return;
     this.resetButtons();
     const bg = getBackgroundById(save.equippedBackground);
-    drawBackground(App.ctx, now, bg, App.stars);
+    drawBackground(App.ctx, now, bg, App.stars, save);
     drawHomeButton(App.ctx, mousePos, homeHovered);
     this.buttons.home = homeButtonRect();
 
@@ -595,15 +604,15 @@ const Screens = {
         ].filter(Boolean)
       : success
         ? [
-            `SCORE: ${game.score} / ${r.passScore}`,
+            `SCORE: ${game.score}`,
             r.stageXp ? `+${r.xpGain} XP (+${r.stageXp} stage)` : `+${r.xpGain} XP`,
             `+${r.coinGain} COINS`,
             r.leaderboardPrize ? `#1 LEADERBOARD BONUS: +${r.leaderboardPrize} COINS!` : null,
             r.guestScore ? "Login to appear on leaderboard" : null,
           ].filter(Boolean)
         : [
-            `SCORE: ${game.score} / ${r.passScore || game.level.passScore}`,
-            game.endReason === "expired" ? "Too slow!" : `Need ${r.needed} more pts`,
+            `SCORE: ${game.score}`,
+            game.endReason === "hearts" ? "Ran out of hearts" : "Keep your hearts!",
             `+${r.xpGain || 0} XP   +${r.coinGain || 0} COINS`,
           ];
     statLines.forEach((line, i) => {
@@ -773,22 +782,36 @@ const Screens = {
     return rect && pointInRect(pos, rect);
   },
 
+  pickCustomBackground() {
+    document.getElementById("custom-bg-input")?.click();
+  },
+
   _handleShopPurchase(save, pos) {
     const items = this.shopTab === "skins" ? MOUSE_SKINS : BACKGROUNDS;
     for (const item of items) {
+      if (this._hit(`upload-${item.id}`, pos)) {
+        if (item.custom) this.pickCustomBackground();
+        return true;
+      }
       if (this._hit(`buy-${item.id}`, pos)) {
         const col = this.shopTab === "skins" ? "ownedSkins" : "ownedBackgrounds";
         const result = purchaseItem(save, item.price, col, item.id);
         if (result.ok) {
           if (this.shopTab === "skins") save.equippedSkin = item.id;
-          else save.equippedBackground = item.id;
+          else {
+            save.equippedBackground = item.id;
+            if (item.custom) this.pickCustomBackground();
+          }
           writeSave(save);
         }
         return true;
       }
       if (this._hit(`equip-${item.id}`, pos)) {
         if (this.shopTab === "skins") save.equippedSkin = item.id;
-        else save.equippedBackground = item.id;
+        else {
+          save.equippedBackground = item.id;
+          BackgroundEngine.preload(getBackgroundById(item.id));
+        }
         writeSave(save);
         return true;
       }
