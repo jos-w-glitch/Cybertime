@@ -22,22 +22,6 @@ const CreatorDom = {
       }
     });
 
-    document.getElementById("creator-file-music")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleMusicFile(file);
-    });
-    document.getElementById("creator-file-bg")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleRewardBgFile(file);
-    });
-    document.getElementById("creator-file-cursor")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleRewardCursorFile(file);
-    });
-
     document.getElementById("community-search")?.addEventListener("input", (e) => {
       CreatorUi.communitySearch = e.target.value || "";
       Screens.resetScroll();
@@ -80,21 +64,15 @@ const CreatorDom = {
   },
 
   pickMusicFile() {
-    const el = document.getElementById("creator-file-music");
-    if (el) el.click();
-    else this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
+    this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
   },
 
   pickRewardBgFile() {
-    const el = document.getElementById("creator-file-bg");
-    if (el) el.click();
-    else this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
+    this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
   },
 
   pickRewardCursorFile() {
-    const el = document.getElementById("creator-file-cursor");
-    if (el) el.click();
-    else this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
+    this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
   },
 
   async _handleMusicFile(file) {
@@ -151,10 +129,10 @@ const CreatorDom = {
     input.value = value || "";
     overlay.classList.remove("hidden");
     document.body.classList.add("creator-form-open");
-    setTimeout(() => {
-      input.focus();
+    requestAnimationFrame(() => {
+      input.focus({ preventScroll: true });
       input.select();
-    }, 50);
+    });
   },
 
   closeNameEditor() {

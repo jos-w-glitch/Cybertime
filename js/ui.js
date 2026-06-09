@@ -775,15 +775,10 @@ const Screens = {
       if (this._hit("share", pos)) {
         if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {
-          if (result === "downloaded") {
-            Screens.shareFeedback = "Image saved!";
-          } else if (result === "saved") {
-            Screens.shareFeedback = "Image saved!";
-          } else if (result === "shared") {
-            Screens.shareFeedback = "Image shared!";
-          } else if (result === "failed") {
-            Screens.shareFeedback = "Could not share image";
-          } else {
+          if (result === "shared") Screens.shareFeedback = "Shared!";
+          else if (result === "unavailable") Screens.shareFeedback = "Share not available here";
+          else if (result === "failed") Screens.shareFeedback = "Could not share";
+          else {
             Screens.shareFeedback = "";
             return;
           }

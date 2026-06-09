@@ -97,52 +97,28 @@ const Share = {
     return this._preparePromise;
   },
 
-  downloadBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
+  async openShareSheet(game, blob) {
+    if (!navigator.share) return "unavailable";
 
-  async saveImageBlob(blob) {
-    if (window.showSaveFilePicker) {
+    const text = this.buildMessage(game.score, game.level);
+    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
+    const attempts = [
+      { title: "CyberTime", text, files: [file] },
+      { files: [file] },
+      { title: "CyberTime", text },
+      { text },
+    ];
+
+    for (const payload of attempts) {
+      if (navigator.canShare && !navigator.canShare(payload)) continue;
       try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: "cybertime-score.png",
-          types: [{ accept: { "image/png": [".png"] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return "saved";
+        await navigator.share(payload);
+        return "shared";
       } catch (err) {
         if (err?.name === "AbortError") return null;
       }
     }
-    this.downloadBlob(blob, "cybertime-score.png");
-    return "downloaded";
-  },
-
-  async shareImageFile(blob) {
-    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
-    if (navigator.share) {
-      const payloads = [
-        { files: [file] },
-        { title: "CyberTime", files: [file] },
-      ];
-      for (const payload of payloads) {
-        if (navigator.canShare && !navigator.canShare(payload)) continue;
-        try {
-          await navigator.share(payload);
-          return "shared";
-        } catch (err) {
-          if (err?.name === "AbortError") return null;
-        }
-      }
-    }
-    return this.saveImageBlob(blob);
+    return "unavailable";
   },
 
   async shareScore(game) {
@@ -155,7 +131,6 @@ const Share = {
     }
     if (!blob) return "failed";
 
-    const result = await this.shareImageFile(blob);
-    return result || "failed";
+    return (await this.openShareSheet(game, blob)) || "failed";
   },
 };

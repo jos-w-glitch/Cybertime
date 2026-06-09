@@ -3156,52 +3156,28 @@ const Share = {
     return this._preparePromise;
   },
 
-  downloadBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  },
+  async openShareSheet(game, blob) {
+    if (!navigator.share) return "unavailable";
 
-  async saveImageBlob(blob) {
-    if (window.showSaveFilePicker) {
+    const text = this.buildMessage(game.score, game.level);
+    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
+    const attempts = [
+      { title: "CyberTime", text, files: [file] },
+      { files: [file] },
+      { title: "CyberTime", text },
+      { text },
+    ];
+
+    for (const payload of attempts) {
+      if (navigator.canShare && !navigator.canShare(payload)) continue;
       try {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: "cybertime-score.png",
-          types: [{ accept: { "image/png": [".png"] } }],
-        });
-        const writable = await handle.createWritable();
-        await writable.write(blob);
-        await writable.close();
-        return "saved";
+        await navigator.share(payload);
+        return "shared";
       } catch (err) {
         if (err?.name === "AbortError") return null;
       }
     }
-    this.downloadBlob(blob, "cybertime-score.png");
-    return "downloaded";
-  },
-
-  async shareImageFile(blob) {
-    const file = new File([blob], "cybertime-score.png", { type: "image/png" });
-    if (navigator.share) {
-      const payloads = [
-        { files: [file] },
-        { title: "CyberTime", files: [file] },
-      ];
-      for (const payload of payloads) {
-        if (navigator.canShare && !navigator.canShare(payload)) continue;
-        try {
-          await navigator.share(payload);
-          return "shared";
-        } catch (err) {
-          if (err?.name === "AbortError") return null;
-        }
-      }
-    }
-    return this.saveImageBlob(blob);
+    return "unavailable";
   },
 
   async shareScore(game) {
@@ -3214,8 +3190,7 @@ const Share = {
     }
     if (!blob) return "failed";
 
-    const result = await this.shareImageFile(blob);
-    return result || "failed";
+    return (await this.openShareSheet(game, blob)) || "failed";
   },
 };
 const CREATOR_DB = "cybertime-creator";
@@ -3739,22 +3714,6 @@ const CreatorDom = {
       }
     });
 
-    document.getElementById("creator-file-music")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleMusicFile(file);
-    });
-    document.getElementById("creator-file-bg")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleRewardBgFile(file);
-    });
-    document.getElementById("creator-file-cursor")?.addEventListener("change", (e) => {
-      const file = e.target.files?.[0];
-      e.target.value = "";
-      if (file) this._handleRewardCursorFile(file);
-    });
-
     document.getElementById("community-search")?.addEventListener("input", (e) => {
       CreatorUi.communitySearch = e.target.value || "";
       Screens.resetScroll();
@@ -3797,21 +3756,15 @@ const CreatorDom = {
   },
 
   pickMusicFile() {
-    const el = document.getElementById("creator-file-music");
-    if (el) el.click();
-    else this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
+    this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
   },
 
   pickRewardBgFile() {
-    const el = document.getElementById("creator-file-bg");
-    if (el) el.click();
-    else this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
+    this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
   },
 
   pickRewardCursorFile() {
-    const el = document.getElementById("creator-file-cursor");
-    if (el) el.click();
-    else this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
+    this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
   },
 
   async _handleMusicFile(file) {
@@ -3868,10 +3821,10 @@ const CreatorDom = {
     input.value = value || "";
     overlay.classList.remove("hidden");
     document.body.classList.add("creator-form-open");
-    setTimeout(() => {
-      input.focus();
+    requestAnimationFrame(() => {
+      input.focus({ preventScroll: true });
       input.select();
-    }, 50);
+    });
   },
 
   closeNameEditor() {
@@ -5224,15 +5177,10 @@ const Screens = {
       if (this._hit("share", pos)) {
         if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {
-          if (result === "downloaded") {
-            Screens.shareFeedback = "Image saved!";
-          } else if (result === "saved") {
-            Screens.shareFeedback = "Image saved!";
-          } else if (result === "shared") {
-            Screens.shareFeedback = "Image shared!";
-          } else if (result === "failed") {
-            Screens.shareFeedback = "Could not share image";
-          } else {
+          if (result === "shared") Screens.shareFeedback = "Shared!";
+          else if (result === "unavailable") Screens.shareFeedback = "Share not available here";
+          else if (result === "failed") Screens.shareFeedback = "Could not share";
+          else {
             Screens.shareFeedback = "";
             return;
           }
@@ -5467,9 +5415,13 @@ const App = {
       if (!inGame && e.button !== 0) return;
       if (inGame && !waitingStart && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
+      Input.syncPos(e.clientX, e.clientY);
+
+      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
+      if (document.body.classList.contains("creator-form-open")) return;
+
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);
-      Input.syncPos(e.clientX, e.clientY);
 
       if (this.state === "gameover" && pointInRect(Input.mousePos, homeButtonRect())) {
         this.goHome();
@@ -5482,9 +5434,6 @@ const App = {
         if (clickResult === "begin") this.beginGame(performance.now());
         return;
       }
-
-      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
-      if (document.body.classList.contains("creator-form-open")) return;
 
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);

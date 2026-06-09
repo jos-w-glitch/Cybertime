@@ -153,9 +153,13 @@ const App = {
       if (!inGame && e.button !== 0) return;
       if (inGame && !waitingStart && e.button !== 0 && e.button !== 1 && e.button !== 2) return;
 
+      Input.syncPos(e.clientX, e.clientY);
+
+      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
+      if (document.body.classList.contains("creator-form-open")) return;
+
       e.preventDefault();
       canvas.setPointerCapture?.(e.pointerId);
-      Input.syncPos(e.clientX, e.clientY);
 
       if (this.state === "gameover" && pointInRect(Input.mousePos, homeButtonRect())) {
         this.goHome();
@@ -168,9 +172,6 @@ const App = {
         if (clickResult === "begin") this.beginGame(performance.now());
         return;
       }
-
-      if (this.state === "creator" && CreatorUi.handlePointerDown(Input.mousePos)) return;
-      if (document.body.classList.contains("creator-form-open")) return;
 
       if (Screens.scrollableState(this.state)) {
         Screens.beginScrollDrag(e.clientY);
