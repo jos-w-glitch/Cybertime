@@ -24,9 +24,7 @@ const CreatorUi = {
     else this.drawStage(save, mousePos, now);
   },
 
-  handlePointerDown(pos) {
-    if (this.page === "rewards") return CreatorRewardUi.handlePointerDown(pos);
-    if (this.page === "stage") return this._stagePointerDown(pos);
+  handlePointerDown() {
     return false;
   },
 
@@ -128,17 +126,7 @@ const CreatorUi = {
     y = this._rowLabel("STAGE NAME", pad, y, cardW);
     const nameH = uiBtnHeight(40);
     const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: nameH };
-    Screens.btn("cgNameField", "NAME", nameRect.x, nameRect.y, nameRect.w, nameRect.h);
-    App.ctx.fillStyle = "rgba(18,18,28,0.85)";
-    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
-    App.ctx.fill();
-    App.ctx.strokeStyle = rgb(COLORS.gray);
-    App.ctx.lineWidth = 2;
-    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
-    App.ctx.stroke();
-    App.ctx.font = uiFont(20);
-    App.ctx.fillStyle = rgb(draft.name ? COLORS.text : COLORS.gray);
-    App.ctx.fillText(draft.name || "Tap to enter name…", nameRect.x + 14, nameRect.y + nameH * 0.62);
+    Screens.buttons.cgNameField = nameRect;
     y += nameH + gap;
 
     y = this._rowLabel("BPM", pad, y, cardW);
@@ -279,19 +267,6 @@ const CreatorUi = {
     return this._handleStageClick(save, pos);
   },
 
-  _stagePointerDown(pos) {
-    const draft = CreatorStore.draft();
-    if (this._hit("cgNameField", pos)) {
-      CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
-      return true;
-    }
-    if (this._hit("cgMusic", pos)) {
-      CreatorDom.pickMusicFile();
-      return true;
-    }
-    return false;
-  },
-
   _handleStageClick(save, pos) {
     const draft = CreatorStore.draft();
     if (this._hit("cgBack", pos)) { App.state = "levels"; this.levelsTab = "community"; return true; }
@@ -299,20 +274,22 @@ const CreatorUi = {
     if (this._hit("cgBpmUp", pos)) { adjustCreatorBpm(draft, 1); return true; }
     if (this._hit("cgTrackDown", pos)) { cycleCreatorTrack(draft, -1); return true; }
     if (this._hit("cgTrackUp", pos)) { cycleCreatorTrack(draft, 1); return true; }
-    if (this._hit("cgMusic", pos)) return true;
+    if (this._hit("cgMusic", pos)) return false;
     if (this._hit("cgEditRewards", pos)) { this.page = "rewards"; Screens.resetScroll(); return true; }
     if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
     if (this._hit("cgPublish", pos)) {
-      if (!draft.name?.trim()) {
-        CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
+      const name = draft.name?.trim() || document.getElementById("creator-inline-name")?.value?.trim();
+      if (!name) {
+        CreatorDom.setUploadStatus("Enter a stage name");
+        CreatorDom.focusNameField();
         return true;
       }
-      const stageName = draft.name.trim();
+      draft.name = name;
       CreatorDom.setUploadStatus("Publishing…");
       CreatorStore.publishLevel()
         .then((id) => {
-          CreatorDom.showShareModal(stageName, id);
+          CreatorDom.showShareModal(name, id);
           App.state = "levels";
           this.levelsTab = "community";
           this.page = "stage";

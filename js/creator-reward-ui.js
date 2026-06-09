@@ -110,15 +110,7 @@ const CreatorRewardUi = {
     return this._handleRewardsClick(save, pos);
   },
 
-  handlePointerDown(pos) {
-    if (Screens._hit("cgrBgUpload", pos)) {
-      CreatorDom.pickRewardBgFile();
-      return true;
-    }
-    if (Screens._hit("cgrCursorUpload", pos)) {
-      CreatorDom.pickRewardCursorFile();
-      return true;
-    }
+  handlePointerDown() {
     return false;
   },
 
@@ -130,8 +122,8 @@ const CreatorRewardUi = {
       draft.name = names[(names.indexOf(draft.name) + 1) % names.length];
       return true;
     }
-    if (Screens._hit("cgrBgUpload", pos)) return true;
-    if (Screens._hit("cgrCursorUpload", pos)) return true;
+    if (Screens._hit("cgrBgUpload", pos)) return false;
+    if (Screens._hit("cgrCursorUpload", pos)) return false;
     if (Screens._hit("cgrSave", pos)) {
       CreatorStore.saveRewardDraft().then(() => { CreatorUi.page = "pickReward"; });
       return true;

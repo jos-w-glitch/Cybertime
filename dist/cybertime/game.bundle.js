@@ -3691,27 +3691,33 @@ function cycleCreatorTrack(draft, delta) {
   draft.musicPublicUrl = null;
 }
 const CreatorDom = {
-  _nameSaveCb: null,
   _uploadStatus: "",
 
   init() {
-    document.getElementById("creator-name-save")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      this._saveNameEditor();
+    document.getElementById("creator-inline-name")?.addEventListener("input", (e) => {
+      CreatorStore.draft().name = (e.target.value || "").slice(0, 24);
     });
-    document.getElementById("creator-name-cancel")?.addEventListener("click", (e) => {
-      e.preventDefault();
-      this.closeNameEditor();
+    document.getElementById("creator-inline-name")?.addEventListener("focus", () => {
+      document.body.classList.add("creator-form-open");
     });
-    document.getElementById("creator-name-form")?.addEventListener("submit", (e) => {
-      e.preventDefault();
-      this._saveNameEditor();
+    document.getElementById("creator-inline-name")?.addEventListener("blur", () => {
+      document.body.classList.remove("creator-form-open");
     });
-    document.getElementById("creator-stage-name")?.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        this._saveNameEditor();
-      }
+
+    document.getElementById("creator-music-file")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleMusicFile(file);
+    });
+    document.getElementById("creator-bg-file")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardBgFile(file);
+    });
+    document.getElementById("creator-cursor-file")?.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      e.target.value = "";
+      if (file) this._handleRewardCursorFile(file);
     });
 
     document.getElementById("community-search")?.addEventListener("input", (e) => {
@@ -3726,12 +3732,57 @@ const CreatorDom = {
   },
 
   syncOverlays() {
+    this._syncCommunitySearch();
+    this._syncCreatorInputs();
+  },
+
+  _canvasRect() {
+    return App.canvas?.getBoundingClientRect() || null;
+  },
+
+  _gameToScreen(rect) {
+    const cr = this._canvasRect();
+    if (!cr || !rect) return null;
+    const scaleX = cr.width / viewW();
+    const scaleY = cr.height / viewH();
+    return {
+      left: cr.left + rect.x * scaleX,
+      top: cr.top + rect.y * scaleY,
+      width: rect.w * scaleX,
+      height: rect.h * scaleY,
+    };
+  },
+
+  _onScreen(rect) {
+    if (!rect) return false;
+    return rect.y + rect.h > 72 && rect.y < viewH() - 16;
+  },
+
+  _place(el, gameRect) {
+    if (!el) return;
+    if (!this._onScreen(gameRect)) {
+      el.classList.add("hidden");
+      return;
+    }
+    const s = this._gameToScreen(gameRect);
+    if (!s) {
+      el.classList.add("hidden");
+      return;
+    }
+    el.classList.remove("hidden");
+    el.style.left = `${s.left}px`;
+    el.style.top = `${s.top}px`;
+    el.style.width = `${s.width}px`;
+    el.style.height = `${s.height}px`;
+  },
+
+  _syncCommunitySearch() {
     const searchWrap = document.getElementById("community-search-wrap");
     const showSearch = App.state === "levels" && CreatorUi.levelsTab === "community";
     searchWrap?.classList.toggle("hidden", !showSearch);
     if (!showSearch || !searchWrap || !App.canvas) return;
 
-    const rect = App.canvas.getBoundingClientRect();
+    const rect = this._canvasRect();
     const scaleY = rect.height / viewH();
     const scaleX = rect.width / viewW();
     const searchY = CreatorUi.communitySearchY();
@@ -3740,31 +3791,46 @@ const CreatorDom = {
     searchWrap.style.top = `${rect.top + searchY * scaleY}px`;
   },
 
-  pickFile(accept, onPick) {
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = accept;
-    input.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0.01";
-    document.body.appendChild(input);
-    const finish = () => input.remove();
-    input.addEventListener("change", () => {
-      const file = input.files?.[0];
-      finish();
-      if (file) onPick(file);
-    }, { once: true });
-    input.click();
+  _syncCreatorInputs() {
+    const root = document.getElementById("creator-overlays");
+    const nameInput = document.getElementById("creator-inline-name");
+    const musicLabel = document.getElementById("creator-music-label");
+    const bgLabel = document.getElementById("creator-bg-label");
+    const cursorLabel = document.getElementById("creator-cursor-label");
+    const inCreator = App.state === "creator";
+
+    root?.classList.toggle("hidden", !inCreator);
+    if (!inCreator) return;
+
+    const page = CreatorUi.page;
+    if (page === "stage") {
+      const draft = CreatorStore.draft();
+      if (nameInput && document.activeElement !== nameInput) {
+        nameInput.value = draft.name || "";
+      }
+      this._place(nameInput, Screens.buttons.cgNameField);
+      this._place(musicLabel, Screens.buttons.cgMusic);
+      bgLabel?.classList.add("hidden");
+      cursorLabel?.classList.add("hidden");
+      return;
+    }
+
+    nameInput?.classList.add("hidden");
+    musicLabel?.classList.add("hidden");
+    if (page === "rewards") {
+      this._place(bgLabel, Screens.buttons.cgrBgUpload);
+      this._place(cursorLabel, Screens.buttons.cgrCursorUpload);
+      return;
+    }
+
+    bgLabel?.classList.add("hidden");
+    cursorLabel?.classList.add("hidden");
   },
 
-  pickMusicFile() {
-    this.pickFile("audio/*,audio/mpeg,audio/mp3,.mp3", (f) => this._handleMusicFile(f));
-  },
-
-  pickRewardBgFile() {
-    this.pickFile("image/*,video/*,.png,.jpg,.jpeg,.webp,.mp4,.webm", (f) => this._handleRewardBgFile(f));
-  },
-
-  pickRewardCursorFile() {
-    this.pickFile("image/png,image/jpeg,image/webp,.png,.jpg", (f) => this._handleRewardCursorFile(f));
+  focusNameField() {
+    const input = document.getElementById("creator-inline-name");
+    if (!input || input.classList.contains("hidden")) return;
+    input.focus({ preventScroll: true });
   },
 
   async _handleMusicFile(file) {
@@ -3809,43 +3875,6 @@ const CreatorDom = {
 
   getUploadStatus() {
     return this._uploadStatus;
-  },
-
-  openNameEditor(value, onSave) {
-    const overlay = document.getElementById("creator-name-overlay");
-    const input = document.getElementById("creator-stage-name");
-    const error = document.getElementById("creator-name-error");
-    if (!overlay || !input) return;
-    this._nameSaveCb = onSave;
-    if (error) error.textContent = "";
-    input.value = value || "";
-    overlay.classList.remove("hidden");
-    document.body.classList.add("creator-form-open");
-    requestAnimationFrame(() => {
-      input.focus({ preventScroll: true });
-      input.select();
-    });
-  },
-
-  closeNameEditor() {
-    document.getElementById("creator-name-overlay")?.classList.add("hidden");
-    document.body.classList.remove("creator-form-open");
-    const error = document.getElementById("creator-name-error");
-    if (error) error.textContent = "";
-    this._nameSaveCb = null;
-  },
-
-  _saveNameEditor() {
-    const input = document.getElementById("creator-stage-name");
-    const name = input?.value?.trim().slice(0, 24) || "";
-    if (!name) {
-      const error = document.getElementById("creator-name-error");
-      if (error) error.textContent = "Enter a stage name";
-      return;
-    }
-    if (this._nameSaveCb) this._nameSaveCb(name);
-    CreatorStore.draft().name = name;
-    this.closeNameEditor();
   },
 
   showShareModal(stageName, levelId) {
@@ -3917,9 +3946,7 @@ const CreatorUi = {
     else this.drawStage(save, mousePos, now);
   },
 
-  handlePointerDown(pos) {
-    if (this.page === "rewards") return CreatorRewardUi.handlePointerDown(pos);
-    if (this.page === "stage") return this._stagePointerDown(pos);
+  handlePointerDown() {
     return false;
   },
 
@@ -4021,17 +4048,7 @@ const CreatorUi = {
     y = this._rowLabel("STAGE NAME", pad, y, cardW);
     const nameH = uiBtnHeight(40);
     const nameRect = { x: pad + 12, y: y, w: cardW - 24, h: nameH };
-    Screens.btn("cgNameField", "NAME", nameRect.x, nameRect.y, nameRect.w, nameRect.h);
-    App.ctx.fillStyle = "rgba(18,18,28,0.85)";
-    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
-    App.ctx.fill();
-    App.ctx.strokeStyle = rgb(COLORS.gray);
-    App.ctx.lineWidth = 2;
-    roundRect(App.ctx, nameRect.x, nameRect.y, nameRect.w, nameRect.h, 8);
-    App.ctx.stroke();
-    App.ctx.font = uiFont(20);
-    App.ctx.fillStyle = rgb(draft.name ? COLORS.text : COLORS.gray);
-    App.ctx.fillText(draft.name || "Tap to enter name…", nameRect.x + 14, nameRect.y + nameH * 0.62);
+    Screens.buttons.cgNameField = nameRect;
     y += nameH + gap;
 
     y = this._rowLabel("BPM", pad, y, cardW);
@@ -4172,19 +4189,6 @@ const CreatorUi = {
     return this._handleStageClick(save, pos);
   },
 
-  _stagePointerDown(pos) {
-    const draft = CreatorStore.draft();
-    if (this._hit("cgNameField", pos)) {
-      CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
-      return true;
-    }
-    if (this._hit("cgMusic", pos)) {
-      CreatorDom.pickMusicFile();
-      return true;
-    }
-    return false;
-  },
-
   _handleStageClick(save, pos) {
     const draft = CreatorStore.draft();
     if (this._hit("cgBack", pos)) { App.state = "levels"; this.levelsTab = "community"; return true; }
@@ -4192,20 +4196,22 @@ const CreatorUi = {
     if (this._hit("cgBpmUp", pos)) { adjustCreatorBpm(draft, 1); return true; }
     if (this._hit("cgTrackDown", pos)) { cycleCreatorTrack(draft, -1); return true; }
     if (this._hit("cgTrackUp", pos)) { cycleCreatorTrack(draft, 1); return true; }
-    if (this._hit("cgMusic", pos)) return true;
+    if (this._hit("cgMusic", pos)) return false;
     if (this._hit("cgEditRewards", pos)) { this.page = "rewards"; Screens.resetScroll(); return true; }
     if (this._hit("cgPickReward", pos)) { this.page = "pickReward"; Screens.resetScroll(); return true; }
     if (this._hit("cgTest", pos)) { this.testDraft(); return true; }
     if (this._hit("cgPublish", pos)) {
-      if (!draft.name?.trim()) {
-        CreatorDom.openNameEditor(draft.name, (name) => { draft.name = name; });
+      const name = draft.name?.trim() || document.getElementById("creator-inline-name")?.value?.trim();
+      if (!name) {
+        CreatorDom.setUploadStatus("Enter a stage name");
+        CreatorDom.focusNameField();
         return true;
       }
-      const stageName = draft.name.trim();
+      draft.name = name;
       CreatorDom.setUploadStatus("Publishing…");
       CreatorStore.publishLevel()
         .then((id) => {
-          CreatorDom.showShareModal(stageName, id);
+          CreatorDom.showShareModal(name, id);
           App.state = "levels";
           this.levelsTab = "community";
           this.page = "stage";
@@ -4335,15 +4341,7 @@ const CreatorRewardUi = {
     return this._handleRewardsClick(save, pos);
   },
 
-  handlePointerDown(pos) {
-    if (Screens._hit("cgrBgUpload", pos)) {
-      CreatorDom.pickRewardBgFile();
-      return true;
-    }
-    if (Screens._hit("cgrCursorUpload", pos)) {
-      CreatorDom.pickRewardCursorFile();
-      return true;
-    }
+  handlePointerDown() {
     return false;
   },
 
@@ -4355,8 +4353,8 @@ const CreatorRewardUi = {
       draft.name = names[(names.indexOf(draft.name) + 1) % names.length];
       return true;
     }
-    if (Screens._hit("cgrBgUpload", pos)) return true;
-    if (Screens._hit("cgrCursorUpload", pos)) return true;
+    if (Screens._hit("cgrBgUpload", pos)) return false;
+    if (Screens._hit("cgrCursorUpload", pos)) return false;
     if (Screens._hit("cgrSave", pos)) {
       CreatorStore.saveRewardDraft().then(() => { CreatorUi.page = "pickReward"; });
       return true;
