@@ -452,6 +452,10 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
       accent: meta.rewardAccent,
       mediaId: meta.rewardMediaId || null,
       mediaUrl: meta.rewardMediaUrl || null,
+    },
+  };
+  return level;
+}
 
 function unlockCommunityReward(save, level) {
   if (!level?.community || !level.rewardBgId) return;
