@@ -152,7 +152,7 @@ class Target {
     if (isSlider) {
       this.y = 180 + Math.random() * (viewH() - 340);
       this.x = Math.random() < 0.5 ? -40 : viewW() + 40;
-      this.velX = this.x < 0 ? 5 + level.id * 0.4 : -(5 + level.id * 0.4);
+      this.velX = this.x < 0 ? 5 + levelNumericId(level) * 0.4 : -(5 + levelNumericId(level) * 0.4);
     } else {
       this.x = 100 + Math.random() * (viewW() - 200);
       this.y = 140 + Math.random() * (viewH() - 280);
@@ -395,7 +395,7 @@ function createStartTarget(level) {
     x: cx,
     y: cy,
     hitZoneX: cx,
-    velX: 5 + level.id * 0.05,
+    velX: 5 + levelNumericId(level) * 0.05,
     isSlider,
     partner: null,
   };

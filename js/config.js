@@ -410,6 +410,12 @@ function getTutorial(key) {
   return { title: tutorial.title, lines };
 }
 
+function levelNumericId(level) {
+  if (typeof level?.id === "number" && Number.isFinite(level.id)) return level.id;
+  const n = parseInt(String(level?.id || "").replace(/\D/g, ""), 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+}
+
 function levelStartMechanic(level) {
   const fromTutorial = {
     red: "BOMB",
@@ -420,7 +426,7 @@ function levelStartMechanic(level) {
   };
   if (level.tutorial && fromTutorial[level.tutorial]) return fromTutorial[level.tutorial];
 
-  if (level.infinite) {
+  if (level.infinite || level.community) {
     if (level.sliderRed) return "SLIDER_BOMB";
     if (level.sliders) return "SLIDER";
     if (level.allowPurple) return "PURPLE";

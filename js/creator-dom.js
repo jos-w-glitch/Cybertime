@@ -37,6 +37,10 @@ const CreatorDom = {
     document.getElementById("creator-share-copy")?.addEventListener("click", () => this._copyShareLink());
     document.getElementById("creator-share-native")?.addEventListener("click", () => this._nativeShare());
     document.getElementById("creator-share-close")?.addEventListener("click", () => this.hideShareModal());
+
+    for (const id of ["creator-music-label", "creator-bg-label", "creator-cursor-label"]) {
+      document.getElementById(id)?.addEventListener("pointerdown", (e) => e.stopPropagation());
+    }
   },
 
   syncOverlays() {

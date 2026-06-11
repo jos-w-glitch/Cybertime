@@ -224,7 +224,7 @@ function finishGameRewards(save, game) {
   if (level.community) {
     const timedOut = game.endReason === "time";
     const success = timedOut && (game.hearts ?? 0) > 0;
-    const isTest = level.communityId === "test";
+    const isTest = String(level.communityId || "").startsWith("test");
     let rewardUnlocked = false;
     if (!isTest) updateCommunityHighScore(save, level.communityId, score);
     if (success && !isTest) {

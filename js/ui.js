@@ -567,6 +567,12 @@ const Screens = {
     drawBackground(App.ctx, now, bg, App.stars, save);
     if (!game.started) {
       game.startTarget.draw(App.ctx);
+      if (game.level.creatorTest) {
+        const pad = Screens.screenPad();
+        const w = 180;
+        const rect = Screens.btn("editStage", "EDIT", viewW() - pad - w, 96, w, uiBtnHeight(40));
+        drawNeonButton(App.ctx, rect, "EDIT STAGE", pointInRect(Input.mousePos, rect), true);
+      }
       GameLogic.drawHud(App.ctx, game, game.level, save);
       return;
     }
@@ -667,6 +673,8 @@ const Screens = {
 
     if (success && r.unlockedNext && !infinite && !community) {
       this.drawActionButton("next", "NEXT", btnY, mousePos);
+    } else if (game.level.creatorTest) {
+      this.drawActionButton("editStage", "EDIT STAGE", btnY, mousePos);
     } else if (!success) {
       this.drawActionButton("restart", "RESTART", btnY, mousePos);
     } else {
@@ -772,6 +780,7 @@ const Screens = {
 
     if (state === "gameover") {
       if (this._hit("home", pos)) { App.goHome(); return true; }
+      if (this._hit("editStage", pos)) { App.returnToCreatorEdit(); return true; }
       if (this._hit("share", pos)) {
         if (Share._status !== "ready") return true;
         Share.shareScore(App.game).then((result) => {

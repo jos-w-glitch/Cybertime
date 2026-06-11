@@ -12,6 +12,7 @@ const App = {
   loopStarted: false,
   renderError: null,
   leaderboardLevelId: null,
+  creatorReturnPage: null,
 
   async init() {
     canvas = document.getElementById("game");
@@ -112,12 +113,16 @@ const App = {
       Input.save = this.save;
       this.stars = createStars();
       AudioEngine.setVolumes(this.save.settings);
-      CreatorStore.init().catch(() => {});
-      const communityParam = new URLSearchParams(window.location.search).get("community");
-      if (communityParam) {
-        CreatorUi.levelsTab = "community";
-        this.state = "levels";
-      }
+      CreatorStore.init().then(() => {
+        const communityParam = new URLSearchParams(window.location.search).get("community");
+        if (!communityParam) return;
+        const meta = CreatorStore.getById(communityParam);
+        if (meta) CreatorUi.launchCommunity(meta);
+        else {
+          CreatorUi.levelsTab = "community";
+          this.state = "levels";
+        }
+      }).catch(() => {});
       Auth.hideNameScreen();
       this.sessionReady = true;
       if (this.state !== "game" || !this.game?.running) {
@@ -167,6 +172,10 @@ const App = {
       }
 
       if (inGame) {
+        if (waitingStart && this.game.level.creatorTest && Screens.buttons.editStage && pointInRect(Input.mousePos, Screens.buttons.editStage)) {
+          this.returnToCreatorEdit();
+          return;
+        }
         const button = Input.touchMode ? 0 : e.button;
         const clickResult = GameLogic.handleClick(this.game, button, Input.mousePos, performance.now());
         if (clickResult === "begin") this.beginGame(performance.now());
@@ -257,9 +266,20 @@ const App = {
     this.pendingLevel = null;
     this.activeTutorial = null;
     this.leaderboardLevelId = null;
+    this.creatorReturnPage = null;
     Screens.shareFeedback = "";
     Share.reset();
     this.state = "menu";
+    AudioEngine.startMenuMusic();
+  },
+
+  returnToCreatorEdit() {
+    MobileShell.exitPlayMode();
+    this.game = null;
+    this.state = "creator";
+    CreatorUi.page = this.creatorReturnPage || "stage";
+    this.creatorReturnPage = null;
+    Screens.resetScroll();
     AudioEngine.startMenuMusic();
   },
 

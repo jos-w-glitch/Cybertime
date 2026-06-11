@@ -11,7 +11,7 @@ const CreatorUi = {
   },
 
   communityListTop() {
-    return this.communitySearchY() + uiBtnHeight(44) + uiBtnGap(12);
+    return this.communitySearchY() + uiBtnHeight(44) + uiBtnGap(24);
   },
 
   drawMenuSlot(slot, mousePos) {
@@ -45,7 +45,10 @@ const CreatorUi = {
     drawNeonButton(App.ctx, Screens.btn("lvCommunity", "COMMUNITY", pad + tabW + gap, tabY, tabW, uiBtnHeight(40)), "COMMUNITY", this.levelsTab === "community", true);
 
     if (this.levelsTab === "main") this._drawMainLevels(save, mousePos, pad);
-    else this._drawCommunityLevels(save, mousePos, pad);
+    else {
+      this._drawCommunitySearchBar(pad);
+      this._drawCommunityLevels(save, mousePos, pad);
+    }
 
     Screens.drawActionButton("back", "BACK", Screens.bottomActionY(), mousePos, { small: true });
     Screens.finishButtons();
@@ -70,10 +73,31 @@ const CreatorUi = {
       const rect = Screens.btn(`level-${level.id}`, "PLAY", viewW() - play.w - 24, y - 8, play.w, play.h);
       App.ctx.font = gameFont(24);
       App.ctx.fillStyle = rgb(unlocked ? COLORS.text : COLORS.gray);
-      App.ctx.fillText(`${level.id}. ${level.name}`, pad, y + 24);
+      App.ctx.fillText(`${level.id}. ${level.name}`, pad, y + 22);
+      const best = save.highScores[level.id] || 0;
+      if (best > 0) {
+        App.ctx.font = gameFont(16);
+        App.ctx.fillStyle = rgb(COLORS.green);
+        App.ctx.fillText(`BEST: ${best}`, pad, y + 48);
+      }
       if (unlocked) drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
     });
     App.ctx.restore();
+  },
+
+  _drawCommunitySearchBar(pad) {
+    const y = this.communitySearchY();
+    App.ctx.font = uiFont(16);
+    App.ctx.fillStyle = rgb(COLORS.gold);
+    App.ctx.fillText("SEARCH STAGES", pad + 12, y + 16);
+    App.ctx.strokeStyle = rgb(COLORS.gray);
+    App.ctx.lineWidth = 2;
+    roundRect(App.ctx, pad, y + 22, viewW() - pad * 2, uiBtnHeight(40), 8);
+    App.ctx.stroke();
+    App.ctx.font = uiFont(18);
+    App.ctx.fillStyle = rgb(this.communitySearch ? COLORS.text : COLORS.gray);
+    const hint = this.communitySearch || "Type to search by name or author…";
+    App.ctx.fillText(hint, pad + 24, y + 50);
   },
 
   _drawCommunityLevels(save, mousePos, pad) {
@@ -100,10 +124,16 @@ const CreatorUi = {
       if (y + rowH < top || y > viewH() - 80) return;
       const rect = Screens.btn(`clevel-${meta.id}`, "PLAY", viewW() - play.w - 24, y - 8, play.w, play.h);
       App.ctx.font = gameFont(22);
-      App.ctx.fillText(`${meta.name}`, pad, y + 22);
+      App.ctx.fillStyle = rgb(COLORS.text);
+      App.ctx.fillText(`${meta.name || "MY STAGE"}`, pad, y + 22);
       App.ctx.font = gameFont(16);
       App.ctx.fillStyle = rgb(COLORS.gray);
-      App.ctx.fillText(`by ${meta.author || "Creator"}`, pad, y + 48);
+      App.ctx.fillText(`by ${meta.author || "Creator"}`, pad, y + 44);
+      const best = save.communityHighScores?.[meta.id] || 0;
+      if (best > 0) {
+        App.ctx.fillStyle = rgb(COLORS.green);
+        App.ctx.fillText(`BEST: ${best}`, pad + 200, y + 44);
+      }
       drawNeonButton(App.ctx, rect, "PLAY", pointInRect(mousePos, rect), true);
     });
     App.ctx.restore();
@@ -211,23 +241,28 @@ const CreatorUi = {
   },
 
   async launchCommunity(meta) {
-    let musicUrl = null;
-    if (meta.musicSource === "upload" && meta.hasMusic) {
-      musicUrl = meta.musicPublicUrl || await CreatorStore.getMusicUrl(meta.id);
+    let musicUrl = meta.musicPublicUrl || null;
+    if (!musicUrl && meta.musicSource === "upload" && meta.hasMusic) {
+      musicUrl = await CreatorStore.getMusicUrl(meta.id);
     }
     App.launchGame(applyCreatorDraftToLevel(meta, musicUrl));
   },
 
   async testDraft() {
-    const draft = { ...CreatorStore.draft(), author: "Test" };
+    App.creatorReturnPage = CreatorUi.page;
+    const draft = { ...CreatorStore.draft(), author: "Test", creatorTest: true };
     if (!draft.id) draft.id = `test_${Date.now()}`;
+    const name = document.getElementById("creator-inline-name")?.value?.trim();
+    if (name) draft.name = name;
     let musicUrl = null;
     if (draft.musicSource === "upload") {
       if (draft._pendingMusic) musicUrl = URL.createObjectURL(draft._pendingMusic);
       else if (draft.musicPublicUrl) musicUrl = draft.musicPublicUrl;
       else if (draft.hasMusic) musicUrl = await CreatorStore.getMusicUrl(draft.id);
     }
-    App.launchGame(applyCreatorDraftToLevel(draft, musicUrl));
+    const level = applyCreatorDraftToLevel(draft, musicUrl);
+    level.creatorTest = true;
+    App.launchGame(level);
   },
 
   handleLevelsClick(save, pos) {
@@ -235,6 +270,8 @@ const CreatorUi = {
     if (this._hit("lvCommunity", pos)) {
       this.levelsTab = "community";
       Screens.resetScroll();
+      const searchEl = document.getElementById("community-search");
+      if (searchEl) searchEl.value = this.communitySearch || "";
       CreatorStore.refreshCommunitySearch(this.communitySearch).catch(() => {});
       return true;
     }

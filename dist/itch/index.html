@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
   <title>CyberTime</title>
   <meta name="description" content="CyberTime — rhythm timing game">
-  <meta name="cybertime-build" content="2026-06-09 13:04:16 UTC">
+  <meta name="cybertime-build" content="2026-06-11 15:24:37 UTC">
   <meta name="screen-orientation" content="portrait">
   <base href="./">
   <link rel="icon" type="image/png" href="assets/icon-192.png">
@@ -212,7 +212,7 @@
     #creator-overlays {
       position: fixed;
       inset: 0;
-      z-index: 200;
+      z-index: 300;
       pointer-events: none;
     }
     #creator-overlays.hidden { display: none !important; }
@@ -242,12 +242,13 @@
       outline: none;
     }
     .creator-overlay-hit {
-      opacity: 0.02;
+      opacity: 0.12;
       background: #00ffc8;
       border: none;
       cursor: pointer;
       padding: 0;
       display: block;
+      z-index: 301;
     }
     #creator-overlays input[type="file"] {
       position: fixed;
@@ -259,7 +260,7 @@
     }
     #community-search-wrap {
       position: fixed;
-      z-index: 120;
+      z-index: 250;
       pointer-events: auto;
       touch-action: manipulation;
     }

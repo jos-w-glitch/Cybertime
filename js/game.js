@@ -109,7 +109,8 @@ const GameLogic = {
     }
 
     if (start.mechanic === "SLIDER" || start.mechanic === "SLIDER_BOMB") {
-      if (hit !== "HIT" || Math.abs(start.x - start.hitZoneX) > 32) return null;
+      const zone = Input.touchMode ? 52 : 32;
+      if (hit !== "HIT" || Math.abs(start.x - start.hitZoneX) > zone) return null;
       if (start.mechanic === "SLIDER_BOMB") {
         if (Input.touchMode) {
           if (action !== "ball") { start.mobileTapCount = 0; return null; }

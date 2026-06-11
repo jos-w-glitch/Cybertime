@@ -418,6 +418,7 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
     id: meta.id,
     communityId: meta.id,
     community: true,
+    creatorTest: !!meta.creatorTest,
     communityMusicUrl: meta.musicSource === "upload" ? (musicUrl || meta.musicPublicUrl || null) : null,
     musicSourceId: meta.musicSource === "track" ? `track${meta.musicTrackId || 1}` : null,
     name: meta.name?.trim() || "MY STAGE",
@@ -451,10 +452,6 @@ function applyCreatorDraftToLevel(meta, musicUrl) {
       accent: meta.rewardAccent,
       mediaId: meta.rewardMediaId || null,
       mediaUrl: meta.rewardMediaUrl || null,
-    },
-  };
-  return level;
-}
 
 function unlockCommunityReward(save, level) {
   if (!level?.community || !level.rewardBgId) return;

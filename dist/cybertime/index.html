@@ -8,7 +8,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="cybertime-build" content="2026-06-09 13:04:15 UTC">
+  <meta name="cybertime-build" content="2026-06-11 15:24:37 UTC">
   <meta name="apple-mobile-web-app-title" content="cybertime">
   <meta name="screen-orientation" content="portrait">
   <meta name="x5-orientation" content="portrait">
@@ -258,7 +258,7 @@
     #creator-overlays {
       position: fixed;
       inset: 0;
-      z-index: 200;
+      z-index: 300;
       pointer-events: none;
     }
     #creator-overlays.hidden { display: none !important; }
@@ -288,12 +288,13 @@
       outline: none;
     }
     .creator-overlay-hit {
-      opacity: 0.02;
+      opacity: 0.12;
       background: #00ffc8;
       border: none;
       cursor: pointer;
       padding: 0;
       display: block;
+      z-index: 301;
     }
     #creator-overlays input[type="file"] {
       position: fixed;
@@ -305,7 +306,7 @@
     }
     #community-search-wrap {
       position: fixed;
-      z-index: 120;
+      z-index: 250;
       pointer-events: auto;
       touch-action: manipulation;
     }
